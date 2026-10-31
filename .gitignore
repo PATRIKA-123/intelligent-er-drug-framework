@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+!.env.example
+
+*.log
+schema_backup.sql
+data_backup.sql
+*.dump
+
+.DS_Store
