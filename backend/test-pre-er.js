@@ -92,7 +92,7 @@ async function findInteractionFixture() {
      LIMIT 100`
   );
 
-    for (const candidate of [...reusable.rows, ...reusableUnlinked.rows, ...candidates.rows]) {
+   for (const candidate of [...reusableUnlinked.rows, ...candidates.rows]) {
     const stayId = String(candidate.stay_id);
     const normalized = await getNormalizedMedications(stayId);
     if (normalized.canonical_identities.length < 2) continue;
