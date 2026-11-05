@@ -2,10 +2,6 @@ require("dotenv").config();
 const pool = require("./db");
 const { generateAndPersistAlerts } = require("./services/alertService");
 
-// Verification script for Phase 7 (Clinical Alert Engine).
-// This DOES write to clinical_alerts (and, via Phase 6, to
-// decision_support_results and drug_safety_results), scoped only to
-// the stay_ids tested here.
 
 async function run() {
 
@@ -25,7 +21,7 @@ async function run() {
     console.log("Safety check passed. Connected DB:", currentDb);
     const cases = [
       { label: "High NEWS2 (expect PHYSIOLOGICAL_RISK + drug alerts)", stayId: "32007337" },
-      { label: "Plain DETERIORATING (expect VITAL_TREND, LOW)", stayId: "33065303" },
+      { label: "Plain DETERIORATING (expect VITAL_TREND, REVIEW)", stayId: "33065303" },
       { label: "RAPIDLY_DETERIORATING (expect VITAL_TREND, HIGH)", stayId: "30915333" },
       { label: "Mixed severity, no physio trigger (expect drug alerts only)", stayId: "32034003" },
       { label: "Real MAJOR interaction stay (expect drug alerts only, no physio)", stayId: "30094124" },

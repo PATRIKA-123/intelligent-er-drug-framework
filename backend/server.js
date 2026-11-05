@@ -15,6 +15,7 @@ const clinicalContextRoutes = require("./routes/clinicalContext");
 const clinicalSummaryRoutes = require("./routes/clinicalSummary");
 const decisionSupportRoutes = require("./routes/decisionSupport");
 const preErRoutes = require("./routes/preEr"); // <-- Added Pre-ER routes
+const clinicalPermissionsRoutes = require("./routes/clinicalPermissions");
 
 const app = express();
 app.use(cors());
@@ -43,6 +44,7 @@ app.use("/api/emergency-cases", preErRoutes); // <-- Mounted Pre-ER routes
 app.use("/api/clinical-context", clinicalContextRoutes);
 app.use("/api/clinical-summary", clinicalSummaryRoutes);
 app.use("/api/decision-support", decisionSupportRoutes);
+app.use("/api/clinical-permissions", clinicalPermissionsRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

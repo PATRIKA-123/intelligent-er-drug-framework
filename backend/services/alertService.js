@@ -51,9 +51,25 @@ function buildDrugAlertRows(patientId, stayId, drugSafetyRows) {
   });
 }
 
+
 function buildPhysiologicalAlertRows(patientId, stayId, decision) {
   const rows = [];
 
+  const knownNews2Categories = [
+    "High Risk",
+    "Medium Risk",
+    "Low-Medium Risk",
+    "Low Risk",
+  ];
+
+  const knownTrendClassifications = [
+    "STABLE",
+    "IMPROVING",
+    "DETERIORATING",
+    "RAPIDLY_DETERIORATING",
+  ];
+
+  // NEWS2 high-risk alert
   if (decision.news2_category === "High Risk") {
     rows.push({
       patient_id: patientId,
@@ -70,8 +86,27 @@ function buildPhysiologicalAlertRows(patientId, stayId, decision) {
         "The stored NEWS2 classification is High Risk. " +
         "This is a project-generated finding and requires clinical review.",
     });
+  } else if (
+    !knownNews2Categories.includes(decision.news2_category)
+  ) {
+    rows.push({
+      patient_id: patientId,
+      stay_id: stayId,
+      alert_type: "DATA_QUALITY_REVIEW",
+      alert_source: "NEWS2",
+      medication_id_a: null,
+      medication_id_b: null,
+      safety_result_id: null,
+      severity: "REVIEW",
+      priority: "REVIEW",
+      alert_title: "NEWS2 data requires review",
+      alert_message:
+        "The NEWS2 category is missing or unrecognized. " +
+        "Clinical review is required before relying on the physiological risk assessment.",
+    });
   }
 
+  // Vital trend alerts
   if (decision.trend_classification === "RAPIDLY_DETERIORATING") {
     rows.push({
       patient_id: patientId,
@@ -97,17 +132,36 @@ function buildPhysiologicalAlertRows(patientId, stayId, decision) {
       medication_id_a: null,
       medication_id_b: null,
       safety_result_id: null,
-     severity: "REVIEW",
-     priority: "REVIEW",
-     alert_title: "Deteriorating vital trend - Clinical Review Required", 
+      severity: "REVIEW",
+      priority: "REVIEW",
+      alert_title: "Deteriorating vital trend - Clinical Review Required",
       alert_message:
         "The stored vital-trend classification is DETERIORATING. " +
-        "This is a project-generated finding and requires clinical review.",
+        "Clinical review is required. This classification does not independently increase the overall risk tier.",
+    });
+  } else if (
+    !knownTrendClassifications.includes(decision.trend_classification)
+  ) {
+    rows.push({
+      patient_id: patientId,
+      stay_id: stayId,
+      alert_type: "DATA_QUALITY_REVIEW",
+      alert_source: "TREND_ENGINE",
+      medication_id_a: null,
+      medication_id_b: null,
+      safety_result_id: null,
+      severity: "REVIEW",
+      priority: "REVIEW",
+      alert_title: "Vital trend data requires review",
+      alert_message:
+        "The vital-trend classification is missing, insufficient, or unrecognized. " +
+        "Clinical review is required before relying on the trend assessment.",
     });
   }
 
   return rows;
 }
+
 
 async function generateAndPersistAlerts(stayId) {
   const engineRunId = randomUUID();

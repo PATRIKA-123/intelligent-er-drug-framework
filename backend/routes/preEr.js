@@ -36,11 +36,21 @@ function parseBoolean(value) {
 }
 
 function mapConsciousness(value) {
-  if (!value && value !== 0) return null;
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
   const normalized = String(value).trim().toUpperCase();
-  if (["ALERT", "A", "NORMAL"].includes(normalized)) return "ALERT";
-  if (["NEW_CONFUSION", "CONFUSED", "C", "V", "P", "U"].includes(normalized)) return normalized === "C" ? "NEW_CONFUSION" : normalized;
-  return normalized;
+
+  if (["ALERT", "A"].includes(normalized)) {
+    return "ALERT";
+  }
+
+  if (["NEW_CONFUSION", "V", "P", "U"].includes(normalized)) {
+    return normalized;
+  }
+
+  return null;
 }
 
 function normalizeTransportStatus(status) {
@@ -50,8 +60,14 @@ function normalizeTransportStatus(status) {
   return null;
 }
 
-function buildNEWS2PreviewFromCase(caseId, assessment, vital) {
+function buildNEWS2PreviewFromCase(
+  caseId,
+  assessment,
+  vital,
+  options = {}
+) {
   const source = vital || assessment || null;
+
   if (!source) {
     return {
       status: "incomplete",
@@ -69,20 +85,37 @@ function buildNEWS2PreviewFromCase(caseId, assessment, vital) {
   }
 
   const payload = {
-    respiratoryRate: asNumber(vital?.respiratory_rate ?? assessment?.respiratory_rate),
-    spo2: asNumber(vital?.spo2 ?? assessment?.spo2),
-    systolicBP: asNumber(vital?.systolic_bp ?? assessment?.systolic_bp),
-    heartRate: asNumber(vital?.heart_rate ?? assessment?.heart_rate),
-    temperatureCelsius: asNumber(vital?.temperature ?? assessment?.temperature),
-    consciousness: mapConsciousness(vital?.consciousness_level ?? assessment?.consciousness_status ?? "ALERT"),
-    oxygenSupport: parseBoolean(vital?.oxygen_support ?? assessment?.oxygen_support ?? false),
-    spo2Scale: 1,
-    scale2ClinicianAuthorized: false,
+    respiratoryRate: asNumber(
+      vital?.respiratory_rate ?? assessment?.respiratory_rate
+    ),
+    spo2: asNumber(
+      vital?.spo2 ?? assessment?.spo2
+    ),
+    systolicBP: asNumber(
+      vital?.systolic_bp ?? assessment?.systolic_bp
+    ),
+    heartRate: asNumber(
+      vital?.heart_rate ?? assessment?.heart_rate
+    ),
+    temperatureCelsius: asNumber(
+      vital?.temperature ?? assessment?.temperature
+    ),
+    consciousness: mapConsciousness(
+      vital?.consciousness_level ?? assessment?.consciousness_status
+    ),
+    oxygenSupport: parseBoolean(
+      vital?.oxygen_support ?? assessment?.oxygen_support
+    ),
+    spo2Scale: options.spo2Scale ?? 1,
+  scale2ClinicianAuthorized:
+  options.scale2PermissionVerified === true,
   };
 
   const missingFields = [];
+
   for (const [key, value] of Object.entries(payload)) {
     if (key === "scale2ClinicianAuthorized") continue;
+
     if (value === null || value === undefined || value === "") {
       missingFields.push(key);
     }
@@ -100,10 +133,12 @@ function buildNEWS2PreviewFromCase(caseId, assessment, vital) {
 
   try {
     const result = calculateNEWS2(payload);
+
     return {
       status: "complete",
       case_id: Number(caseId),
-      assessment_time: assessment?.assessment_time || vital?.recorded_at || null,
+      assessment_time:
+        assessment?.assessment_time || vital?.recorded_at || null,
       news2: result,
       input: payload
     };
@@ -138,9 +173,14 @@ async function getLatestCaseAssessment(caseId) {
 
 async function getLatestCaseVital(caseId) {
   const result = await pool.query(
-    `SELECT * FROM pre_er_vitals WHERE case_id = $1 ORDER BY recorded_at DESC, vital_id DESC LIMIT 1`,
+    `SELECT *
+     FROM pre_er_vitals
+     WHERE case_id = $1
+     ORDER BY recorded_at DESC, vital_id DESC
+     LIMIT 1`,
     [caseId]
   );
+
   return result.rows[0] || null;
 }
 
@@ -402,7 +442,7 @@ router.post(
         ) VALUES (
           $1, COALESCE($2, CURRENT_TIMESTAMP), $3, $4, $5, $6, $7, $8, 
           $9, COALESCE($10, 'APPLICATION'), $11, $12, $13, $14, 
-          $15, $16, COALESCE($17, false), COALESCE($18, 'UNKNOWN'), 
+          $15, $16, $17, COALESCE($18, 'UNKNOWN'),
           COALESCE($19::jsonb, '[]'::jsonb), $20
         )
         RETURNING *`,
@@ -748,24 +788,64 @@ router.post(
         return res.status(404).json({ error: "Emergency case not found" });
       }
 
-      const { assessment_id, vital_id, spo2Scale, scale2ClinicianAuthorized } = req.body || {};
-      const assessment = assessment_id
-        ? ((await pool.query(`SELECT * FROM pre_er_assessments WHERE assessment_id = $1 AND case_id = $2`, [assessment_id, caseId])).rows[0] || null)
-        : await getLatestCaseAssessment(caseId);
-      const vital = vital_id
-        ? ((await pool.query(`SELECT * FROM pre_er_vitals WHERE vital_id = $1 AND case_id = $2`, [vital_id, caseId])).rows[0] || null)
-        : await getLatestCaseVital(caseId);
+       const { assessment_id, vital_id, spo2Scale } = req.body || {};
 
-      const computed = buildNEWS2PreviewFromCase(caseId, assessment, vital);
-      if (computed.status === "complete") {
-        computed.news2.spo2Scale = Number(spo2Scale || computed.input.spo2Scale || 1);
-        if (computed.news2.spo2Scale === 2 && scale2ClinicianAuthorized !== true) {
-          return res.status(400).json({
-            error: "SpO2 Scale 2 requires explicit clinician authorization"
-          });
-        }
-      }
+const requestedSpo2Scale = Number(spo2Scale ?? 1);
+if (![1, 2].includes(requestedSpo2Scale)) {
+  return res.status(400).json({
+    error: "spo2Scale must be 1 or 2"
+  });
+}
+let scale2PermissionVerified = false;
 
+// Verify Scale 2 permission from database.
+if (requestedSpo2Scale === 2) {
+  const permissionResult = await pool.query(
+    `SELECT 1
+     FROM user_clinical_permissions p
+     INNER JOIN users u ON u.user_id = p.user_id
+     WHERE p.user_id = $1
+       AND p.permission_code = $2
+       AND p.revoked_at IS NULL
+       AND u.is_active = TRUE
+     LIMIT 1`,
+    [req.user.user_id, "NEWS2_SPO2_SCALE_2"]
+  );
+
+  if (permissionResult.rowCount === 0) {
+    return res.status(403).json({
+      error: "Active NEWS2 Scale 2 permission is required"
+    });
+  }
+
+  scale2PermissionVerified = true;
+}
+
+const assessment = assessment_id
+  ? ((await pool.query(
+      `SELECT * FROM pre_er_assessments
+       WHERE assessment_id = $1 AND case_id = $2`,
+      [assessment_id, caseId]
+    )).rows[0] || null)
+  : await getLatestCaseAssessment(caseId);
+
+const vital = vital_id
+  ? ((await pool.query(
+      `SELECT * FROM pre_er_vitals
+       WHERE vital_id = $1 AND case_id = $2`,
+      [vital_id, caseId]
+    )).rows[0] || null)
+  : await getLatestCaseVital(caseId);
+
+const computed = buildNEWS2PreviewFromCase(
+  caseId,
+  assessment,
+  vital,
+  {
+    spo2Scale: requestedSpo2Scale,
+    scale2PermissionVerified
+  }
+);
       return res.status(computed.status === "complete" ? 200 : 422).json({
         case_id: Number(caseId),
         ...computed
@@ -796,6 +876,12 @@ router.get(
 
       const assessment = await getLatestCaseAssessment(caseId);
       const vital = await getLatestCaseVital(caseId);
+      console.log("PRE-ER GET HANDLER HIT", {
+  file: __filename,
+  caseId,
+  assessmentFound: !!assessment,
+  vitalFound: !!vital,
+});
       const preview = buildNEWS2PreviewFromCase(caseId, assessment, vital);
 
       return res.status(200).json({ case_id: Number(caseId), ...preview });

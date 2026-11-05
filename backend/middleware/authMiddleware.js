@@ -1,3 +1,4 @@
+
 const jwt = require("jsonwebtoken");
 
 const authMiddleware = (req, res, next) => {
@@ -10,7 +11,13 @@ const authMiddleware = (req, res, next) => {
       });
     }
 
-    const token = authHeader.split(" ")[1];
+    const token = authHeader.slice(7).trim();
+
+    if (!token) {
+      return res.status(401).json({
+        error: "Authentication token required"
+      });
+    }
 
     const decoded = jwt.verify(
       token,
@@ -18,8 +25,8 @@ const authMiddleware = (req, res, next) => {
     );
 
     req.user = decoded;
-
     next();
+
   } catch (err) {
     console.error("Authentication error:", err.message);
 
@@ -36,8 +43,6 @@ const requireRole = (...allowedRoles) => {
         error: "Not authenticated"
       });
     }
-
-     
 
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({

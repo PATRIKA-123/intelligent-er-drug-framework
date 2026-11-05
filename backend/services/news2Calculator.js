@@ -30,30 +30,35 @@ function scoreRespiratoryRate(value) {
 
 function scoreSpO2(value, scale, oxygenSupport) {
   requireNumber(value, "spo2");
-  if (value < 0 || value > 100) throw new Error("spo2 must be 0–100");
-  if (![1, 2].includes(scale)) throw new Error("spo2Scale must be 1 or 2");
+
+  if (value < 0 || value > 100) {
+    throw new Error("spo2 must be 0–100");
+  }
+
+  if (![1, 2].includes(scale)) {
+    throw new Error("spo2Scale must be 1 or 2");
+  }
 
   if (scale === 1) {
     if (value <= 91) return 3;
     if (value <= 93) return 2;
     if (value <= 95) return 1;
-    return 0; // 96-100
+    return 0;
   }
 
-  // Scale 2 (Hypercapnic respiratory failure target 88–92%)
-  if (value <= 83) return 3;
-  if (value <= 85) return 2;
-  if (value <= 87) return 1;
-  if (value <= 92) {
-    return oxygenSupport ? (value >= 91 ? 1 : 0) : 0; // Refined per RCP Scale 2 air vs O2
+  // NEWS2 Scale 2: oxygen-dependent upper thresholds.
+  if (oxygenSupport && value >= 93) {
+    if (value >= 97) return 3;
+    if (value >= 95) return 2;
+    return 1;
   }
-  
-  // SpO2 93-94 on Scale 2
-  if (value <= 94) return oxygenSupport ? 1 : 0;
-  // SpO2 95-96 on Scale 2
-  if (value <= 96) return oxygenSupport ? 2 : 1;
-  // SpO2 >= 97 on Scale 2
-  return oxygenSupport ? 3 : 2;
+
+  // Scale 2: air readings and lower saturation thresholds.
+  if (value >= 86 && value <= 87) return 1;
+  if (value >= 84 && value <= 85) return 2;
+  if (value <= 83) return 3;
+
+  return 0;
 }
 
 function scoreSystolicBP(value) {
