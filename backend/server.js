@@ -16,6 +16,8 @@ const clinicalSummaryRoutes = require("./routes/clinicalSummary");
 const decisionSupportRoutes = require("./routes/decisionSupport");
 const preErRoutes = require("./routes/preEr"); // <-- Added Pre-ER routes
 const clinicalPermissionsRoutes = require("./routes/clinicalPermissions");
+const postErRoutes = require("./routes/postEr");
+const doctorsRoutes = require("./routes/doctors");
 
 const app = express();
 app.use(cors());
@@ -24,6 +26,7 @@ app.use(express.json());
 app.get("/api/health", async (req, res) => {
   try {
     const result = await pool.query("SELECT current_database() AS database_name");
+    console.log("HEALTH CHECK DATABASE:", result.rows[0].database_name);
     res.json({
       status: "ok",
       message: "Backend is running",
@@ -45,6 +48,8 @@ app.use("/api/clinical-context", clinicalContextRoutes);
 app.use("/api/clinical-summary", clinicalSummaryRoutes);
 app.use("/api/decision-support", decisionSupportRoutes);
 app.use("/api/clinical-permissions", clinicalPermissionsRoutes);
+app.use("/api/post-er", postErRoutes);
+app.use("/api/doctors", doctorsRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

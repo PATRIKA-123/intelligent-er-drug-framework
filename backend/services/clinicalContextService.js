@@ -46,6 +46,26 @@ async function getClinicalContext(stayId) {
     [stayId]
   );
 
+    // 3.5 Allergies recorded for this patient.
+  const allergiesResult = await pool.query(
+    `SELECT allergy_id, allergen, reaction, severity,
+            status, source, recorded_at
+     FROM allergies
+     WHERE patient_id = $1
+       AND (status IS NULL OR UPPER(status) = 'ACTIVE')
+     ORDER BY created_at DESC`,
+    [patientResult.rows[0]?.patient_id]
+  );
+
+  // 3.6 Previous medical history recorded for this patient.
+  const historyResult = await pool.query(
+    `SELECT history_id, condition, description,
+            diagnosis_date, status, source, created_at
+     FROM medical_history
+     WHERE patient_id = $1
+     ORDER BY created_at DESC`,
+    [patientResult.rows[0]?.patient_id]
+  );
   // 4. Medications for this stay. medications.stay_id is nullable
   //    (124 of 2710 rows have no stay_id); filtering by stay_id here
   //    correctly excludes those, since they aren't linked to this stay.
@@ -97,8 +117,18 @@ async function getClinicalContext(stayId) {
     latest_observation: latestObservationResult.rows[0] || null,
     latest_news2: latestNews2Result.rows[0] || null,
     latest_trend: latestTrendResult.rows[0] || null,
-    allergies: "unavailable in current dataset",
-    history: "unavailable in current dataset",
+       allergies: {
+      status: allergiesResult.rows.length > 0
+        ? "RECORDED"
+        : "NO_DATA_RECORDED",
+      records: allergiesResult.rows,
+    },
+    history: {
+      status: historyResult.rows.length > 0
+        ? "RECORDED"
+        : "NO_DATA_RECORDED",
+      records: historyResult.rows,
+    },
   };
 }
 
