@@ -5,6 +5,9 @@ import { ROLE_CONFIG } from "../auth/roles";
 import { useStays } from "../lib/useStays";
 import Icon from "./Icon";
 import Mascot from "./Mascot";
+import { STEP_DEFS, stepDone, useCaseNav } from "./CaseNav";
+import { riskLevel } from "../lib/risk";
+import { SCORE_NAME, SCORE_REF } from "../lib/terms";
 
 const BTN = "relative flex h-11 w-11 items-center justify-center rounded-full text-text hover:bg-soft";
 
@@ -28,6 +31,10 @@ export default function UtilityRail() {
   const { user, logout } = useAuth();
   const cfg = ROLE_CONFIG[user.role];
   const [help, setHelp] = useState(false);
+  const nav = useCaseNav();
+  const c = nav?.c;
+  const firstTodo = c ? STEP_DEFS.find((s) => !stepDone(c, s.key))?.key : null;
+  const risk = c?.news2?.complete ? riskLevel(c.news2.risk_level) : null;
 
   useEffect(() => {
     if (!help) return undefined;
@@ -40,42 +47,92 @@ export default function UtilityRail() {
 
   return (
     <>
-      <aside aria-label="Tools" className="fixed bottom-6 left-4 top-6 z-30 hidden w-16 flex-col items-center justify-between rounded-full bg-surface py-5 lg:flex">
-        <div className="flex flex-col items-center gap-2">
-          <Link to={cfg.home} aria-label="Home" title="Home" className="mb-2 flex h-11 w-11 items-center justify-center">
-            <Mascot size={30} outline label="" />
-          </Link>
+      <aside aria-label="Tools" className="fixed bottom-6 left-4 top-6 z-30 hidden w-16 flex-col items-center gap-3 overflow-y-auto lg:flex">
+        <Link to={cfg.home} aria-label="Home" title="Home" className="flex h-14 w-14 flex-none items-center justify-center rounded-full bg-surface">
+          <Mascot size={30} outline label="" />
+        </Link>
+
+        {c && (
+          <div role="group" aria-label="Case steps" className="flex flex-none flex-col items-center gap-2 rounded-full bg-surface p-2">
+            {STEP_DEFS.map((st) => {
+              const done = stepDone(c, st.key);
+              const current = st.key === firstTodo;
+              return (
+                <button
+                  key={st.key}
+                  type="button"
+                  onClick={() => nav.onJump(st.key)}
+                  aria-label={`${st.label}, ${done ? "done" : "to do"}`}
+                  title={`${st.label} (${done ? "done" : "to do"})`}
+                  className={`relative flex h-11 w-11 items-center justify-center rounded-full ${
+                    done ? "bg-mint" : current ? "border-2 border-ink" : "bg-soft"
+                  }`}
+                >
+                  <Icon name={st.icon} size={20} />
+                  {done && (
+                    <span className="absolute -bottom-0.5 -right-0.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-risk-low-fg">
+                      <Icon name="check" size={11} color="#FFFFFF" strokeWidth={3.5} />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div role="group" aria-label="Tools" className="flex flex-none flex-col items-center gap-1 rounded-full border border-[#C9CED8] p-2">
           <button type="button" className={BTN} aria-label="Search by stay ID" title="Search by stay ID"
             onClick={() => document.getElementById("stay-jump")?.focus()}>
             <Icon name="search" size={21} />
           </button>
           {showAttention && <Attention home={cfg.home} />}
-          <button type="button" className={BTN} aria-label="How NEWS2 risk works" title="How NEWS2 risk works"
+          <button type="button" className={BTN} aria-label="How risk is shown" title="How risk is shown"
             aria-expanded={help} onClick={() => setHelp((h) => !h)}>
             <Icon name="help" size={21} />
           </button>
         </div>
-        <div className="flex flex-col items-center gap-2">
-          <button type="button" onClick={logout} className={BTN} aria-label="Sign out" title="Sign out">
-            <Icon name="logout" size={21} />
-          </button>
+
+        <div className="mt-auto flex flex-none flex-col items-center gap-3">
+          {c && (
+            <div
+              role="img"
+              aria-label={risk ? `${SCORE_NAME} (${SCORE_REF}) ${c.news2.total_news2_score}, ${risk.label}` : `${SCORE_NAME} not available yet`}
+              title={risk ? `${SCORE_NAME}: ${c.news2.total_news2_score} (${risk.label})` : `${SCORE_NAME}: not available yet`}
+              className={`flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-semibold ${risk ? risk.badge : "bg-surface text-muted"}`}
+            >
+              {risk ? c.news2.total_news2_score : "–"}
+            </div>
+          )}
+          <div role="group" aria-label="Account" className="flex flex-col items-center gap-2 rounded-full bg-surface p-2">
+            <button type="button" onClick={logout} className={BTN} aria-label="Sign out" title="Sign out">
+              <Icon name="logout" size={21} />
+            </button>
+            <span
+              role="img"
+              aria-label={`Signed in as ${user.username}, ${cfg.label}`}
+              title={`${user.username} (${cfg.label})`}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-lavender text-sm font-semibold"
+            >
+              {(user.username || "me").slice(0, 2).toUpperCase()}
+            </span>
+          </div>
         </div>
       </aside>
 
       {help && (
-        <div role="dialog" aria-label="How NEWS2 risk works" className="fixed bottom-24 left-24 z-40 hidden w-80 rounded-3xl bg-surface p-5 shadow-lg lg:block">
+        <div role="dialog" aria-label="How risk is shown" className="fixed bottom-24 left-24 z-40 hidden w-80 rounded-3xl bg-surface p-5 shadow-lg lg:block">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="m-0 text-base font-semibold">How risk is shown</h2>
             <button type="button" onClick={() => setHelp(false)} className="h-11 rounded-full px-3 text-sm font-semibold underline">Close</button>
           </div>
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[13px] leading-snug">
-            <li><b>High</b>: NEWS2 total 7 or more</li>
+            <li><b>High</b>: total 7 or more</li>
             <li><b>Medium</b>: total 5 or 6</li>
             <li><b>Low-medium</b>: total 0 to 4, but one reading scores 3</li>
             <li><b>Low</b>: everything else</li>
           </ul>
           <p className="mb-0 mt-3 text-xs text-muted">
-            NEWS2 is decision support. A clinician must review every score.
+            Risk comes from the {SCORE_NAME} ({SCORE_REF}). It is decision support. A clinician must review every score.
           </p>
         </div>
       )}

@@ -5,11 +5,13 @@ import RequireRole from "./auth/RequireRole";
 import AppShell from "./components/AppShell";
 import Login from "./pages/Login";
 import Board from "./pages/Board";
+import Incoming from "./pages/Incoming";
 import StayDetail from "./pages/StayDetail";
 import Prescription from "./pages/Prescription";
 import ParamedicHome from "./pages/ParamedicHome";
 import ParamedicCase from "./pages/ParamedicCase";
 import ComingSoon from "./pages/ComingSoon";
+import ParamedicNew from "./pages/ParamedicNew";
 import AdminDoctors from "./pages/AdminDoctors";
 
 function Root() {
@@ -24,13 +26,14 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route element={<RequireRole />}>
         <Route element={<AppShell />}>
-          <Route element={<RequireRole roles={["PARAMEDIC"]} />}>
+          <Route element={<RequireRole roles={["PARAMEDIC", "ADMIN"]} />}>
             <Route path="/paramedic" element={<ParamedicHome />} />
-            <Route path="/paramedic/new" element={<ComingSoon title="New case" note="Case entry is designed and comes in the next build." />} />
+            <Route path="/paramedic/new" element={<ParamedicNew />} />
             <Route path="/paramedic/cases/:caseId" element={<ParamedicCase />} />
           </Route>
           <Route element={<RequireRole roles={["ER_STAFF", "ADMIN"]} />}>
             <Route path="/board" element={<Board />} />
+            <Route path="/incoming" element={<Incoming />} />
           </Route>
           <Route element={<RequireRole roles={["ER_STAFF"]} />}>
             <Route path="/follow-ups" element={<ComingSoon title="Follow-ups" />} />

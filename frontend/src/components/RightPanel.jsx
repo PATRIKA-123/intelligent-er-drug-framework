@@ -5,6 +5,8 @@ import { useAuth } from "../auth/AuthContext";
 import { ROLE_CONFIG } from "../auth/roles";
 import { useStays } from "../lib/useStays";
 import Mascot from "./Mascot";
+import { useCaseNav } from "./CaseNav";
+import { fmtNum } from "../lib/format";
 import RiskBadge from "./RiskBadge";
 import StatusChip from "./StatusChip";
 
@@ -102,10 +104,35 @@ function ParamedicPanel() {
   );
 }
 
+function CaseSnapshot({ c }) {
+  const t = c.transport;
+  const v = c.latest_vital;
+  const rows = [
+    ["Complaint", c.latest_assessment?.chief_complaint],
+    ["Ambulance", t ? `${t.ambulance_id}${t.destination_hospital ? ` to ${t.destination_hospital}` : ""}` : null],
+    ["Transport", t?.transport_status],
+    ["Vitals", v ? `HR ${fmtNum(v.heart_rate)} · RR ${fmtNum(v.respiratory_rate)} · SBP ${fmtNum(v.systolic_bp)} · SpO2 ${fmtNum(v.spo2)}% · ${fmtNum(v.temperature)} °C` : null],
+    ["ER stay", c.stay_id],
+  ];
+  return (
+    <Card title="This case">
+      <dl className="m-0 flex flex-col gap-2.5">
+        {rows.map(([k, val]) => (
+          <div key={k} className="flex flex-col gap-0.5">
+            <dt className="text-xs font-semibold text-muted">{k}</dt>
+            <dd className="m-0 text-sm font-medium">{val || <span className="text-muted">Not recorded yet</span>}</dd>
+          </div>
+        ))}
+      </dl>
+    </Card>
+  );
+}
+
 // Right column on wide screens: who needs attention, plus who is signed in.
 export default function RightPanel() {
   const { user } = useAuth();
   const cfg = ROLE_CONFIG[user.role];
+  const nav = useCaseNav();
   if (user.role === "PATIENT") return null;
   return (
     <aside aria-label="Overview" className="sticky top-6 hidden w-[320px] flex-none flex-col gap-4 self-start xl:flex">
@@ -118,7 +145,8 @@ export default function RightPanel() {
           <div className="text-xs">{cfg.label}</div>
         </div>
       </section>
-      {user.role === "PARAMEDIC" ? <ParamedicPanel /> : <StaffPanel />}
+      {nav?.c && <CaseSnapshot c={nav.c} />}
+      {nav?.c || user.role === "PARAMEDIC" ? <ParamedicPanel /> : <StaffPanel />}
     </aside>
   );
 }

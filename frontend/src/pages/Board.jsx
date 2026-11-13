@@ -43,12 +43,6 @@ export default function Board() {
     });
   }, [state.stays]);
 
-  const counts = useMemo(() => {
-    const c = { high: 0, medium: 0, lowmed: 0, low: 0 };
-    rows.forEach((r) => r.level && (c[r.level.key] += 1));
-    return c;
-  }, [rows]);
-
   const shown = rows.filter((r) => {
     if (filter === "high") return r.level?.key === "high";
     if (filter === "medium") return r.level?.key === "medium";
@@ -82,27 +76,13 @@ export default function Board() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {[
-          ["high", "HIGH", "bg-risk-high-bg text-white"],
-          ["medium", "MEDIUM", "bg-risk-medium-bg text-risk-medium-fg"],
-          ["lowmed", "LOW-MEDIUM", "bg-risk-lowmed-bg text-risk-lowmed-fg"],
-          ["low", "LOW", "bg-risk-low-bg text-risk-low-fg"],
-        ].map(([key, label, cls]) => (
-          <div key={key} className="flex flex-col gap-3 rounded-panel bg-surface px-5 py-5">
-            <span className={`self-start rounded-full px-3 py-1 text-xs font-bold tracking-wide ${cls}`}>{label}</span>
-            <span className="text-[44px] font-semibold leading-none tracking-tight">{counts[key]}</span>
-          </div>
-        ))}
-      </div>
-
       {state.loading && <Loading label="Loading stays" />}
       {state.error && <ErrorState error={state.error} onRetry={() => load(true)} />}
 
       {!state.loading && !state.error && (
         <div className="rounded-panel bg-surface p-3">
           <div className="hidden grid-cols-[150px_1.2fr_1.4fr_130px_2fr_90px] gap-3 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-muted md:grid">
-            <span>NEWS2 risk</span><span>Case and stay</span><span>Patient</span><span>Status</span><span>Latest vitals</span><span>Last obs</span>
+            <span>Risk</span><span>Case and stay</span><span>Patient</span><span>Status</span><span>Latest vitals</span><span>Last obs</span>
           </div>
           {shown.length === 0 && (
             <EmptyState title="No stays match this filter" hint="Try another filter, or wait for new arrivals." />

@@ -5,6 +5,7 @@ import { ROLE_CONFIG } from "../auth/roles";
 import Icon from "./Icon";
 import Mascot from "./Mascot";
 import RightPanel from "./RightPanel";
+import { CaseNavProvider } from "./CaseNav";
 import UtilityRail from "./UtilityRail";
 
 function initials(name = "") {
@@ -32,6 +33,7 @@ export default function AppShell() {
     }`;
 
   return (
+    <CaseNavProvider>
     <div className="min-h-screen px-4 pb-28 pt-4 md:px-8 md:pb-14 md:pt-6 lg:pl-28">
       <UtilityRail />
       {/* Desktop header */}
@@ -137,5 +139,6 @@ export default function AppShell() {
         </button>
       </nav>
     </div>
+    </CaseNavProvider>
   );
 }

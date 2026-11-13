@@ -11,6 +11,7 @@ export const ROLE_CONFIG = {
     home: "/board",
     items: [
       { label: "Board", to: "/board", icon: "home" },
+      { label: "Incoming", to: "/incoming", icon: "list" },
       { label: "Follow-ups", to: "/follow-ups", icon: "calendar" },
     ],
   },
@@ -28,6 +29,8 @@ export const ROLE_CONFIG = {
     items: [
       { label: "Doctors", to: "/admin", icon: "home" },
       { label: "Board", to: "/board", icon: "list" },
+      { label: "Incoming", to: "/incoming", icon: "list" },
+      { label: "Cases", to: "/paramedic", icon: "list" },
     ],
   },
   PATIENT: {

@@ -2,6 +2,7 @@
 // backend code (see the contract report). Fields marked "needs backend" in
 // mock.js are not returned by the real API yet.
 import { request } from "./client.js";
+import { rememberCase, rememberedCases } from "../lib/myCases.js";
 
 export const real = {
   // Auth
@@ -49,15 +50,61 @@ export const real = {
   // Admin
   createDoctor: (body) => request("/doctors", { method: "POST", body }),
 
-  // Paramedic side
-  getCase: (caseId) => request(`/emergency-cases/${caseId}`),
-  getCaseWorkflow: (caseId) => request(`/emergency-cases/${caseId}/workflow`),
-  setCaseStatus: (caseId, status) =>
-    request(`/emergency-cases/${caseId}/status`, { method: "PATCH", body: { status } }),
-  markArrived: (caseId, body) =>
-    request(`/emergency-cases/${caseId}/er-arrival`, { method: "POST", body }),
-  // Not in the backend yet: a list of cases. The mock provides it so the UI can be built.
+  // Paramedic side. The case page reads the backend's "workflow" snapshot.
+  createCase: async (body) => {
+    const res = await request("/emergency-cases", { method: "POST", body });
+    rememberCase(res.case.case_id);
+    return res;
+  },
+  getCase: async (caseId) => {
+    const [w, v] = await Promise.all([
+      request(`/emergency-cases/${caseId}/workflow`),
+      request(`/emergency-cases/${caseId}/vitals`).catch(() => ({ vitals: [] })),
+    ]);
+    const c = normalizeCase(w, v.vitals || []);
+    rememberCase(c.case_id);
+    return c;
+  },
+  recordAssessment: (caseId, body) =>
+    request(`/emergency-cases/${caseId}/assessments`, { method: "POST", body }),
+  recordVitals: (caseId, body) =>
+    request(`/emergency-cases/${caseId}/vitals`, { method: "POST", body }),
+  saveTransport: (caseId, body) =>
+    request(`/emergency-cases/${caseId}/transport`, { method: "POST", body }),
+  setTransportStatus: (caseId, transport_status) =>
+    request(`/emergency-cases/${caseId}/transport`, { method: "PATCH", body: { transport_status } }),
+  markArrived: (caseId, stayId) =>
+    request(`/emergency-cases/${caseId}/er-arrival`, { method: "POST", body: { stay_id: Number(stayId) } }),
+  // The backend has no "list my cases" endpoint yet, so this lists the cases
+  // created or opened on this device. Replace when the backend adds one.
   listCases: async () => {
-    throw new Error("Backend has no endpoint to list emergency cases yet (see ask 1 in the contract report).");
+    const results = await Promise.allSettled(rememberedCases().map((id) => real.getCase(id)));
+    const cases = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
+    return { count: cases.length, cases };
   },
 };
+
+function normalizeCase(w, vitals = []) {
+  const t = w.transport || null;
+  const risk = w.clinical_risk || {};
+  return {
+    case_id: w.case_id,
+    temporary_case_code: w.case?.temporary_case_code,
+    status: w.case?.case_status,
+    stay_id: w.linked_stay_id || null,
+    steps: {
+      assessment: !!w.latest_assessment,
+      vitals: !!w.latest_vital,
+      transport: !!t,
+      handover: t?.transport_status === "HANDOVER_COMPLETE",
+    },
+    transport: t,
+    latest_vital: w.latest_vital || null,
+    vitals_history: vitals,
+    latest_assessment: w.latest_assessment || null,
+    news2:
+      risk.status === "complete"
+        ? { complete: true, ...risk.news2 }
+        : { complete: false, missing: risk.missing_fields || [], message: risk.message || risk.error || "" },
+  };
+}

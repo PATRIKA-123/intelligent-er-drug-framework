@@ -14,6 +14,7 @@ import Button from "../components/Button";
 import { ErrorState, Loading } from "../components/States";
 import { formatTime } from "../lib/format";
 import { invalidateStays } from "../lib/staysCache";
+import { SCORE_NAME, SCORE_REF } from "../lib/terms";
 
 const label = (r, keys, fallback) => {
   for (const k of keys) if (r?.[k]) return r[k];
@@ -169,7 +170,7 @@ export default function StayDetail() {
                   />
                 </div>
                 <p className="mb-0 mt-3.5 text-xs leading-relaxed text-muted">
-                  Chips show each parameter's NEWS2 points. A dashed tile was assumed, not recorded.
+                  Chips show each reading's points toward the score. A dashed tile was assumed, not recorded.
                 </p>
               </>
             ) : (
@@ -193,7 +194,7 @@ export default function StayDetail() {
               className="flex flex-wrap items-center gap-5 rounded-panel p-6"
               style={{ background: "linear-gradient(135deg, #D3EAE3 0%, #E7DEF6 100%)" }}
             >
-              <svg viewBox="0 0 140 140" width="132" height="132" role="img" aria-label={`NEWS2 total ${n.total_news2_score} of a possible 20`}>
+              <svg viewBox="0 0 140 140" width="132" height="132" role="img" aria-label={`${SCORE_NAME} ${n.total_news2_score} of a possible 20`}>
                 <circle cx="70" cy="70" r="56" fill="none" stroke="#FFFFFF" strokeWidth="14" />
                 <circle
                   cx="70" cy="70" r="56" fill="none" stroke="#15171C" strokeWidth="14" strokeLinecap="round"
@@ -203,7 +204,7 @@ export default function StayDetail() {
                 <text x="70" y="82" textAnchor="middle" fontSize="40" fontWeight="600" fill="#15171C">{n.total_news2_score}</text>
               </svg>
               <div className="min-w-[160px] flex-1">
-                <div className="text-[13px] font-bold uppercase tracking-wide">NEWS2 total</div>
+                <div className="text-[13px] font-bold uppercase tracking-wide">{SCORE_NAME} <span className="font-medium normal-case">({SCORE_REF})</span></div>
                 <div className="mt-1"><RiskBadge size="lg" riskText={n.risk_level} /></div>
                 <div className="mt-2 text-[13px] leading-snug">Decision support. Clinician review required. Not a clinical decision.</div>
               </div>
