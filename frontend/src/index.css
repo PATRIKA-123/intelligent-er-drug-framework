@@ -1,14 +1,46 @@
 @import "tailwindcss";
 
-:root {
-  font-family: Inter, system-ui, sans-serif;
-  color: #202330;
-  background: #f5f6f8;
-  font-synthesis: none;
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --color-page: #EDEFF1;
+  --color-surface: #FFFFFF;
+  --color-soft: #F4F5F7;
+  --color-mint: #D3EAE3;
+  --color-lavender: #E7DEF6;
+  --color-ink: #15171C;
+  --color-line: #E0E3E8;
+  --color-text: #1B1F27;
+  --color-muted: #5B6270;
+  --color-focus: #6C4DD6;
+  --color-risk-low-bg: #DDF1E4;
+  --color-risk-low-fg: #0F5A2E;
+  --color-risk-lowmed-bg: #FBEFD3;
+  --color-risk-lowmed-fg: #6B4200;
+  --color-risk-medium-bg: #FADFCF;
+  --color-risk-medium-fg: #7A2E0C;
+  --color-risk-high-bg: #C62828;
+  --color-risk-high-soft: #FBE4E4;
+  --color-risk-high-softfg: #3A0A0A;
+  --radius-panel: 28px;
+  --radius-card: 20px;
 }
 
+html, body, #root { min-height: 100%; }
 body {
   margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
+  background: var(--color-page);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+a, button, input, select, textarea { outline-offset: 2px; }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--color-focus);
+}
+
+.panel { background: var(--color-surface); border-radius: var(--radius-panel); padding: 1.5rem; }
+.field {
+  height: 52px; width: 100%; border-radius: 1rem; border: 1px solid #C9CED8;
+  background: var(--color-surface); padding: 0 1rem; font-size: 1rem; font-weight: 500; color: var(--color-text);
 }

@@ -1,32 +1,23 @@
-# React + TypeScript + Vite
+# ER Decision Support Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Vite 8 + React 19 + Tailwind 4 + react-router 8. Pages are JSX; the project allows JS alongside TS. Soft-bento design from the approved prototype.
 
-Currently, two official plugins are available:
+## Run
+    npm install
+    npm run dev        # http://localhost:5173, sample data by default
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Connect to the real backend
+Copy `.env.example` to `.env`, set `VITE_USE_MOCK=false` and `VITE_API_URL` to the backend (default http://localhost:5000). `/api` is proxied in dev.
 
-## React Compiler
+## Built
+Login, live board / stays list, stay detail (vitals, NEWS2, drug safety, summary, run decision support), prescription (screen, authorize, reject), paramedic case list and case page with "Arrived at ER".
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Not built yet (placeholder pages)
+New case, assessment/vitals/transport/handover forms, follow-ups, prescriptions list, admin, patient.
 
-## Expanding the Oxlint configuration
+## Sample data vs backend
+Fields marked NEEDS-BACKEND in `src/api/mockData.js` do not exist in the backend yet: case list, case code and status and latest NEWS2 in the stays list, patient endpoint, doctor list. Allergy/history field names are unverified, so the stay page tries several names.
+Sample logins: use the role buttons on the login page.
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
-
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Safety notes
+NEWS2 is decision support only. "Unknown" interaction severity is shown, never treated as none. The review checkbox on the prescription page is a proposed safeguard the backend does not require.
