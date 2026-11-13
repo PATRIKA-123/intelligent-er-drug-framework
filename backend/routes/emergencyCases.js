@@ -182,7 +182,6 @@ router.get(
 // CLOSED (a true terminal state) are ever valid through this endpoint.
 
 const TRANSITIONS = {
-  "PRE_ER->ARRIVED_ER": ["PARAMEDIC", "ADMIN"],
   "ARRIVED_ER->ACTIVE_ER": ["ER_STAFF", "ADMIN"],
   "ACTIVE_ER->CLOSED": ["ER_STAFF", "ADMIN"],
 };
@@ -212,9 +211,7 @@ if (
     error: `case_status must be one of: ${VALID_STATUSES.join(", ")}`,
   });
 }
-
-
-      const existing = await pool.query(
+    const existing = await pool.query(
         `SELECT case_id, case_status FROM emergency_cases WHERE case_id = $1`,
         [id]
       );

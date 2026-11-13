@@ -59,6 +59,14 @@ function normalizeTransportStatus(status) {
   if (VALID_TRANSPORT_STATUSES.includes(normalized)) return normalized;
   return null;
 }
+const TRANSPORT_STATUS_TRANSITIONS = {
+  DISPATCHED: ["EN_ROUTE", "CANCELLED"],
+  EN_ROUTE: ["IN_TRANSIT", "CANCELLED"],
+  IN_TRANSIT: ["ARRIVED_AT_DESTINATION", "CANCELLED"],
+  ARRIVED_AT_DESTINATION: ["HANDOVER_COMPLETE"],
+  HANDOVER_COMPLETE: [],
+  CANCELLED: [],
+};
 
 function buildNEWS2PreviewFromCase(
   caseId,
@@ -557,7 +565,15 @@ router.post(
       if (!ambulance_id) {
         return res.status(400).json({ error: "ambulance_id is required" });
       }
+      
+      const statusValue = normalizeTransportStatus(transport_status);
 
+     if (!statusValue) {
+      return res.status(400).json({
+      error: "Invalid transport status",
+    allowed_statuses: VALID_TRANSPORT_STATUSES,
+    });
+  }
       const result = await pool.query(
         `INSERT INTO ambulance_transports (
           case_id, ambulance_id, transport_type, pickup_location,
@@ -573,7 +589,7 @@ router.post(
           destination_hospital || null,
           departure_time || null,
           arrival_time || null,
-          transport_status || null,
+          statusValue,
           source || null,
           notes || null
         ]
@@ -921,9 +937,21 @@ router.patch(
 
       const { transport_id } = latest.rows[0];
       const statusValue = normalizeTransportStatus(req.body.transport_status || latest.rows[0].transport_status);
+      const currentStatus = latest.rows[0].transport_status;
+
       if (!statusValue) {
         return res.status(400).json({ error: "transport_status must be one of: DISPATCHED, EN_ROUTE, IN_TRANSIT, ARRIVED_AT_DESTINATION, HANDOVER_COMPLETE, CANCELLED" });
       }
+
+if (
+  statusValue !== currentStatus &&
+  !TRANSPORT_STATUS_TRANSITIONS[currentStatus]?.includes(statusValue)
+) {
+  return res.status(409).json({
+    error: `Invalid transport status transition: ${currentStatus} -> ${statusValue}`,
+    allowed_next_statuses: TRANSPORT_STATUS_TRANSITIONS[currentStatus] || [],
+  });
+}
 
       const result = await pool.query(
         `UPDATE ambulance_transports
@@ -1165,15 +1193,38 @@ router.post(
         return res.status(409).json({ error: "Emergency case patient does not match the ER stay patient" });
       }
 
-      const updated = await client.query(
-        `UPDATE emergency_cases
-         SET stay_id = $1,
-             case_status = CASE WHEN case_status = 'PRE_ER' THEN 'ARRIVED_ER' ELSE case_status END
-         WHERE case_id = $2
-         RETURNING case_id, patient_id, stay_id, temporary_case_code, case_status, source, created_by, created_at`,
-        [stayId, caseId]
-      );
-      linkedCase = updated.rows[0];
+      
+const updated = await client.query(
+  `UPDATE emergency_cases
+   SET patient_id = $1,
+       stay_id = $2,
+       case_status = CASE
+         WHEN case_status = 'PRE_ER' THEN 'ARRIVED_ER'
+         ELSE case_status
+       END
+   WHERE case_id = $3
+   RETURNING case_id, patient_id, stay_id, temporary_case_code, case_status, source, created_by, created_at`,
+  [erPatientId, stayId, caseId]
+);
+
+linkedCase = updated.rows[0];
+ 
+
+const transportResult = await client.query(
+  `UPDATE ambulance_transports
+   SET transport_status = 'ARRIVED_AT_DESTINATION',
+       arrival_time = COALESCE(arrival_time, CURRENT_TIMESTAMP)
+   WHERE transport_id = (
+     SELECT transport_id
+     FROM ambulance_transports
+     WHERE case_id = $1
+       AND transport_status != 'CANCELLED'
+     ORDER BY created_at DESC, transport_id DESC
+     LIMIT 1
+   )
+   RETURNING transport_id, case_id, transport_status, arrival_time`,
+  [caseId]
+);
 
       await client.query("COMMIT");
       transactionStarted = false;
