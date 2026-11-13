@@ -4,12 +4,14 @@ import { useAuth } from "../auth/AuthContext";
 import { ROLE_CONFIG } from "../auth/roles";
 import Icon from "./Icon";
 import Mascot from "./Mascot";
+import RightPanel from "./RightPanel";
+import UtilityRail from "./UtilityRail";
 
 function initials(name = "") {
   return name.slice(0, 2).toUpperCase() || "ME";
 }
 
-// Desktop: floating pill nav on top, no sidebar. Phone: bottom bar with a round action button.
+// Desktop: floating pill nav on top, a slim tools rail on the left (lg), an overview column on the right (xl). Phone: bottom bar with a round action button.
 export default function AppShell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -30,7 +32,8 @@ export default function AppShell() {
     }`;
 
   return (
-    <div className="min-h-screen px-4 pb-28 pt-4 md:px-8 md:pb-14 md:pt-6">
+    <div className="min-h-screen px-4 pb-28 pt-4 md:px-8 md:pb-14 md:pt-6 lg:pl-28">
+      <UtilityRail />
       {/* Desktop header */}
       <header className="mb-8 hidden flex-wrap items-center justify-center gap-3 md:flex">
         <Link to={cfg.home} aria-label="Home" className="flex h-12 w-12 items-center justify-center rounded-full bg-surface">
@@ -44,6 +47,7 @@ export default function AppShell() {
         <form onSubmit={jump} className="flex h-12 min-w-[260px] flex-[0_1_340px] items-center gap-2.5 rounded-full bg-surface px-[18px]">
           <Icon name="search" size={18} color="#5B6472" strokeWidth={2} />
           <input
+            id="stay-jump"
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -53,7 +57,7 @@ export default function AppShell() {
           />
           <span className="rounded-lg border border-line px-1.5 py-0.5 text-xs text-muted">Enter</span>
         </form>
-        <div className="relative">
+        <div className="relative lg:hidden">
           <button
             type="button"
             onClick={() => setMenu((m) => !m)}
@@ -87,9 +91,12 @@ export default function AppShell() {
         <span className="rounded-full bg-surface px-3 py-1.5 text-xs font-semibold">{cfg.label}</span>
       </div>
 
-      <main className="mx-auto max-w-[1280px]">
-        <Outlet />
-      </main>
+      <div className="mx-auto flex max-w-[1680px] items-start gap-6">
+        <main className="min-w-0 flex-1">
+          <Outlet />
+        </main>
+        <RightPanel />
+      </div>
 
       {/* Phone bottom bar */}
       <nav

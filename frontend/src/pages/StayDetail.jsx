@@ -13,11 +13,38 @@ import ProvenanceTag from "../components/ProvenanceTag";
 import Button from "../components/Button";
 import { ErrorState, Loading } from "../components/States";
 import { formatTime } from "../lib/format";
+import { invalidateStays } from "../lib/staysCache";
 
 const label = (r, keys, fallback) => {
   for (const k of keys) if (r?.[k]) return r[k];
   return fallback;
 };
+
+function MedList({ meds }) {
+  const [all, setAll] = useState(false);
+  const seen = new Set();
+  const unique = meds.filter((m) => {
+    const k = String(m.medication_name || "").trim().toLowerCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const shown = all ? unique : unique.slice(0, 8);
+  return (
+    <>
+      {shown.map((m, i) => (
+        <span key={i} className="rounded-full bg-soft px-3 py-1 text-sm font-semibold">
+          {m.medication_name}{m.dosage ? ` ${m.dosage}` : ""}
+        </span>
+      ))}
+      {unique.length > 8 && (
+        <button type="button" onClick={() => setAll((a) => !a)} className="min-h-11 rounded-full px-3 text-sm font-semibold underline">
+          {all ? "Show fewer" : `Show all ${unique.length}`}
+        </button>
+      )}
+    </>
+  );
+}
 
 function SummaryRow({ title, status, children }) {
   return (
@@ -51,6 +78,7 @@ export default function StayDetail() {
     setRunMsg("");
     try {
       await api.runDecisionSupport(stayId);
+      invalidateStays();
       setRunMsg("Decision support finished.");
       load();
     } catch (e) {
@@ -200,11 +228,7 @@ export default function StayDetail() {
             </SummaryRow>
             <SummaryRow title="Current medication" status={s.medications?.length ? "RECORDED" : "NO_DATA_RECORDED"}>
               {s.medications?.length
-                ? s.medications.map((m, i) => (
-                    <span key={i} className="text-[15px] font-semibold">
-                      {m.medication_name}{m.dosage ? ` ${m.dosage}` : ""}{m.frequency ? ` ${m.frequency}` : ""}
-                    </span>
-                  ))
+                ? <MedList meds={s.medications} />
                 : <span className="text-sm">No data recorded</span>}
             </SummaryRow>
             <SummaryRow title="Diagnoses" status={s.diagnoses?.length ? "RECORDED" : "NO_DATA_RECORDED"}>

@@ -9,7 +9,27 @@ export const real = {
     request("/auth/login", { method: "POST", body: { username, password } }),
 
   // ER stays
-  listStays: () => request("/stays"),
+  // The stays list has no latest NEWS2 yet, so fill it from each stay's summary
+  // (max 20 stays). Remove this once the backend adds it to the list.
+  listStays: async () => {
+    const data = await request("/stays");
+    const stays = data.stays || [];
+    await Promise.all(
+      stays.map(async (s) => {
+        if (s.latest_news2) return;
+        try {
+          const sum = await request(`/clinical-summary/${s.stay_id}`);
+          s.latest_news2 = sum.latest_news2 || null;
+          s.latest_observation = sum.latest_observation || null;
+          if (sum.stay?.case_status) s.case_status = sum.stay.case_status;
+          if (sum.stay?.case_code) s.case_code = sum.stay.case_code;
+        } catch {
+          /* leave this row unscored */
+        }
+      })
+    );
+    return { ...data, stays };
+  },
   getStaySummary: (stayId) => request(`/clinical-summary/${stayId}`),
   getObservations: (stayId) => request(`/stays/${stayId}/observations`),
   getNews2Results: (stayId) => request(`/stays/${stayId}/news2`),
@@ -25,6 +45,9 @@ export const real = {
       method: "PATCH",
       body,
     }),
+
+  // Admin
+  createDoctor: (body) => request("/doctors", { method: "POST", body }),
 
   // Paramedic side
   getCase: (caseId) => request(`/emergency-cases/${caseId}`),

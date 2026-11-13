@@ -6,6 +6,7 @@ const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 let prescriptions = []; // in memory only
 let nextPrescriptionId = 1;
+const mockDoctors = [];
 const cases = CASES.map((c) => ({ ...c, steps: { ...c.steps } }));
 
 export const mock = {
@@ -79,6 +80,18 @@ export const mock = {
     p.status = body.status;
     p.review_notes = body.review_notes || null;
     return { message: "Prescription reviewed", prescription: p };
+  },
+
+  // Admin. Mirrors the backend rules; there is no list-doctors endpoint.
+  createDoctor: async (body) => {
+    await wait(500);
+    const u = (body.username || "").trim();
+    if (u.length < 3) throw new ApiError(400, "Username must contain 3 to 100 characters");
+    if (!body.password || body.password.length < 12) throw new ApiError(400, "Password must contain 12 to 128 characters");
+    if (!(body.full_name || "").trim()) throw new ApiError(400, "Doctor full name is required (maximum 150 characters)");
+    if (u === "doctor1" || mockDoctors.includes(u)) throw new ApiError(409, "Username, email, or registration number already exists");
+    mockDoctors.push(u);
+    return { message: "Doctor account and profile created successfully", doctor: { user_id: 100 + mockDoctors.length, username: u, role: "DOCTOR", is_active: true } };
   },
 
   // Paramedic side. listCases is NEEDS-BACKEND.

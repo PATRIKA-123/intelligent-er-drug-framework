@@ -7,6 +7,8 @@ const CHIP = {
   3: "bg-risk-high-bg text-white",
 };
 
+import { fmtNum } from "../lib/format";
+
 export default function VitalTile({ label, value, unit, points, assumed }) {
   const missing = value == null || value === "";
   return (
@@ -17,7 +19,7 @@ export default function VitalTile({ label, value, unit, points, assumed }) {
     >
       <div className="text-xs font-semibold text-muted">{label}</div>
       <div className="mt-1.5 text-[28px] font-semibold leading-none tracking-tight">
-        {missing ? "–" : value}
+        {missing ? "–" : typeof value === "string" && Number.isNaN(Number(value)) ? value : fmtNum(value)}
         {!missing && unit && <span className="ml-1 text-[13px] font-medium text-muted">{unit}</span>}
       </div>
       {assumed ? (

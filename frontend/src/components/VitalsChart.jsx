@@ -1,4 +1,4 @@
-import { formatTime } from "../lib/format";
+import { fmtNum, formatTime } from "../lib/format";
 
 // Heart rate (solid, round markers) and SpO2 (dashed, square markers) over a stay.
 // Two different line styles so the lines are told apart without color.
@@ -16,11 +16,17 @@ export default function VitalsChart({ observations }) {
   }
   const step = obs.length > 1 ? (X1 - X0) / (obs.length - 1) : 0;
   const x = (i) => X0 + i * step;
-  const hr = obs.map((o, i) => (o.heart_rate != null ? [x(i), scale(o.heart_rate, 80, 140)] : null));
-  const sp = obs.map((o, i) => (o.spo2 != null ? [x(i), scale(o.spo2, 88, 100)] : null));
+  const hrs = obs.map((o) => Number(o.heart_rate)).filter((v) => !Number.isNaN(v) && v > 0);
+  const sps = obs.map((o) => Number(o.spo2)).filter((v) => !Number.isNaN(v) && v > 0);
+  const hrMin = Math.floor(Math.min(60, ...hrs) / 10) * 10;
+  const hrMax = Math.ceil(Math.max(140, ...hrs) / 10) * 10;
+  const hrMid = Math.round((hrMin + hrMax) / 2);
+  const spMin = Math.floor(Math.min(88, ...sps));
+  const hr = obs.map((o, i) => (o.heart_rate != null ? [x(i), scale(Number(o.heart_rate), hrMin, hrMax)] : null));
+  const sp = obs.map((o, i) => (o.spo2 != null ? [x(i), scale(Number(o.spo2), spMin, 100)] : null));
   const pts = (arr) => arr.filter(Boolean).map((p) => p.join(",")).join(" ");
   const first = obs[0], last = obs[obs.length - 1];
-  const summary = `Line chart: heart rate went from ${first.heart_rate} to ${last.heart_rate} beats per minute and SpO2 from ${first.spo2} to ${last.spo2} percent over ${obs.length} readings.`;
+  const summary = `Line chart: heart rate went from ${fmtNum(first.heart_rate)} to ${fmtNum(last.heart_rate)} beats per minute and SpO2 from ${fmtNum(first.spo2)} to ${fmtNum(last.spo2)} percent over ${obs.length} readings.`;
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={summary} className="mt-3 block">
@@ -28,7 +34,7 @@ export default function VitalsChart({ observations }) {
         <path d={`M${X0} ${Y0}H530M${X0} 100H530M${X0} ${Y1}H530`} />
       </g>
       <g fontSize="11" fill="#5B6472">
-        <text x="0" y="34">140</text><text x="0" y="104">110</text><text x="0" y="174">80</text>
+        <text x="0" y="34">{hrMax}</text><text x="0" y="104">{hrMid}</text><text x="0" y="174">{hrMin}</text>
         {obs.map((o, i) => (
           <text key={i} x={x(i)} y="200" textAnchor="middle">{formatTime(o.observation_time)}</text>
         ))}
@@ -38,8 +44,8 @@ export default function VitalsChart({ observations }) {
       <polyline points={pts(hr)} fill="none" stroke="#15171C" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
       {hr.map((p, i) => p && <circle key={i} cx={p[0]} cy={p[1]} r="5" fill="#15171C" />)}
       <g fontSize="12" fontWeight="700">
-        {hr[hr.length - 1] && <text x={x(obs.length - 1)} y={hr[hr.length - 1][1] - 12} textAnchor="middle" fill="#15171C">{last.heart_rate}</text>}
-        {sp[sp.length - 1] && <text x={x(obs.length - 1)} y={sp[sp.length - 1][1] + 24} textAnchor="middle" fill="#4B33A8">{last.spo2}%</text>}
+        {hr[hr.length - 1] && <text x={x(obs.length - 1)} y={hr[hr.length - 1][1] - 12} textAnchor="middle" fill="#15171C">{fmtNum(last.heart_rate)}</text>}
+        {sp[sp.length - 1] && <text x={x(obs.length - 1)} y={sp[sp.length - 1][1] + 24} textAnchor="middle" fill="#4B33A8">{fmtNum(last.spo2)}%</text>}
       </g>
     </svg>
   );

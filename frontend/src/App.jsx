@@ -10,6 +10,7 @@ import Prescription from "./pages/Prescription";
 import ParamedicHome from "./pages/ParamedicHome";
 import ParamedicCase from "./pages/ParamedicCase";
 import ComingSoon from "./pages/ComingSoon";
+import AdminDoctors from "./pages/AdminDoctors";
 
 function Root() {
   const { user } = useAuth();
@@ -43,7 +44,7 @@ export default function App() {
             <Route path="/stays/:stayId" element={<StayDetail />} />
           </Route>
           <Route element={<RequireRole roles={["ADMIN"]} />}>
-            <Route path="/admin" element={<ComingSoon title="Doctors" note="Doctor assignment needs a doctor-list endpoint from the backend." />} />
+            <Route path="/admin" element={<AdminDoctors />} />
           </Route>
           <Route element={<RequireRole roles={["PATIENT"]} />}>
             <Route path="/patient" element={<ComingSoon title="My visit" note="The backend has no patient endpoint yet." />} />

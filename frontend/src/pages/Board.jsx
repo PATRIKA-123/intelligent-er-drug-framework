@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router";
-import { api } from "../api";
+import { getStays } from "../lib/staysCache";
 import RiskBadge from "../components/RiskBadge";
 import StatusChip from "../components/StatusChip";
 import { EmptyState, ErrorState, Loading } from "../components/States";
 import { riskLevel } from "../lib/risk";
-import { minutesAgo } from "../lib/format";
+import { fmtNum, formatTime, minutesAgo } from "../lib/format";
 
 const FILTERS = [
   { id: "all", label: "All stays" },
@@ -17,7 +17,7 @@ const ORDER = { high: 0, medium: 1, lowmed: 2, low: 3 };
 
 function vitalsLine(o) {
   if (!o) return "No observation yet";
-  return `RR ${o.respiratory_rate ?? "–"} · SpO2 ${o.spo2 ?? "–"}% · SBP ${o.systolic_bp ?? "–"} · HR ${o.heart_rate ?? "–"} · ${o.temperature_celsius ?? "–"} °C`;
+  return `RR ${fmtNum(o.respiratory_rate)} · SpO2 ${fmtNum(o.spo2)}% · SBP ${fmtNum(o.systolic_bp)} · HR ${fmtNum(o.heart_rate)} · ${fmtNum(o.temperature_celsius)} °C`;
 }
 
 export default function Board() {
@@ -26,10 +26,9 @@ export default function Board() {
   const [state, setState] = useState({ loading: true, error: null, stays: [] });
   const [filter, setFilter] = useState("all");
 
-  const load = useCallback(() => {
+  const load = useCallback((force) => {
     setState((s) => ({ ...s, loading: true, error: null }));
-    api
-      .listStays()
+    getStays(force === true)
       .then((d) => setState({ loading: false, error: null, stays: d.stays || [] }))
       .catch((error) => setState({ loading: false, error, stays: [] }));
   }, []);
@@ -98,7 +97,7 @@ export default function Board() {
       </div>
 
       {state.loading && <Loading label="Loading stays" />}
-      {state.error && <ErrorState error={state.error} onRetry={load} />}
+      {state.error && <ErrorState error={state.error} onRetry={() => load(true)} />}
 
       {!state.loading && !state.error && (
         <div className="rounded-panel bg-surface p-3">
@@ -125,7 +124,7 @@ export default function Board() {
               </span>
               <span>{r.case_status && <StatusChip status={r.case_status} />}</span>
               <span className="text-[13px] leading-relaxed">{vitalsLine(r.latest_observation)}</span>
-              <span className="text-[13px] text-muted">{minutesAgo(r.latest_news2?.minutes_ago)}</span>
+              <span className="text-[13px] text-muted">{r.latest_news2?.minutes_ago != null ? minutesAgo(r.latest_news2.minutes_ago) : formatTime(r.latest_observation?.observation_time)}</span>
             </Link>
           ))}
         </div>
