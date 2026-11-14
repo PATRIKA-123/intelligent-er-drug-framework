@@ -6,6 +6,10 @@ const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 let prescriptions = []; // in memory only
 let nextPrescriptionId = 1;
+const mockInvites = {};
+const mockFollowUps = {};
+const mockAssigned = {};
+const mockDischarge = {};
 const mockDoctors = [];
 
 export const mock = {
@@ -19,6 +23,60 @@ export const mock = {
   listStays: async () => {
     await wait();
     return { count: STAYS.length, stays: STAYS };
+  },
+  listDoctors: async () => {
+    await wait(200);
+    return [
+      { user_id: 201, full_name: "Dr. Meera Nair", specialization: "Emergency Medicine" },
+      { user_id: 202, full_name: "Dr. Arjun Rao", specialization: "Cardiology" },
+      { user_id: 203, full_name: "Dr. Sana Iqbal", specialization: "Internal Medicine" },
+    ];
+  },
+  assignDoctor: async (stayId, doctorUserId) => {
+    await wait(350);
+    const d = (await mock.listDoctors()).find((x) => String(x.user_id) === String(doctorUserId));
+    if (!d) throw new ApiError(404, "Doctor not found");
+    mockAssigned[String(stayId)] = d;
+    return { message: "Doctor assigned successfully" };
+  },
+  createDischarge: async (stayId, body) => {
+    await wait(400);
+    const id = String(stayId);
+    if (!STAYS.some((s) => String(s.stay_id) === id)) throw new ApiError(404, "Stay or linked patient not found");
+    if (!mockAssigned[id]) throw new ApiError(403, "Only the actively assigned doctor can authorize discharge");
+    if (mockDischarge[id]) throw new ApiError(409, "A discharge record already exists for this stay");
+    if (!(body.discharge_status || "").trim()) throw new ApiError(400, "discharge_status is required");
+    mockDischarge[id] = { discharge_id: 1, discharge_time: body.discharge_time || new Date().toISOString(), prescribed_followup: body.prescribed_followup === true, ...body, created_at: new Date().toISOString() };
+    return { message: "Discharge record created", discharge: mockDischarge[id] };
+  },
+  recordDeparture: async (stayId) => {
+    await wait(350);
+    const d = mockDischarge[String(stayId)];
+    if (!d) throw new ApiError(409, "The doctor has not authorized a discharge for this visit yet");
+    if (d.departed_at) throw new ApiError(409, "This patient is already marked as left");
+    d.departed_at = new Date().toISOString();
+    return { message: "Departure recorded", departed_at: d.departed_at };
+  },
+  getPostEr: async (stayId) => {
+    await wait(200);
+    if (!STAYS.some((s) => String(s.stay_id) === String(stayId))) throw new ApiError(404, "ED stay not found");
+    return {
+      assigned_doctor: mockAssigned[String(stayId)] || null,
+      follow_ups: mockFollowUps[String(stayId)] || [],
+      prescriptions: prescriptions.filter((p) => p.stay_id === String(stayId)),
+      discharge: mockDischarge[String(stayId)] || null,
+    };
+  },
+  createFollowUp: async (stayId, body) => {
+    await wait(350);
+    if (!STAYS.some((s) => String(s.stay_id) === String(stayId))) throw new ApiError(404, "ED stay not found");
+    if (typeof body.follow_up_date !== "string" || Number.isNaN(Date.parse(body.follow_up_date))) throw new ApiError(400, "A valid follow_up_date is required");
+    if (!(body.follow_up_type || "").trim()) throw new ApiError(400, "follow_up_type is required");
+    const list = (mockFollowUps[String(stayId)] ||= []);
+    const row = { follow_up_id: list.length + 1, status: null, ...body, created_at: new Date().toISOString() };
+    list.push(row);
+    list.sort((a, b) => new Date(a.follow_up_date) - new Date(b.follow_up_date));
+    return { message: "Follow-up created", follow_up: row };
   },
   getStaySummary: async (stayId) => {
     await wait();
@@ -86,11 +144,59 @@ export const mock = {
     await wait(500);
     const u = (body.username || "").trim();
     if (u.length < 3) throw new ApiError(400, "Username must contain 3 to 100 characters");
-    if (!body.password || body.password.length < 12) throw new ApiError(400, "Password must contain 12 to 128 characters");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((body.email || "").trim())) throw new ApiError(400, "A valid doctor email address is required");
     if (!(body.full_name || "").trim()) throw new ApiError(400, "Doctor full name is required (maximum 150 characters)");
     if (u === "doctor1" || mockDoctors.includes(u)) throw new ApiError(409, "Username, email, or registration number already exists");
     mockDoctors.push(u);
-    return { message: "Doctor account and profile created successfully", doctor: { user_id: 100 + mockDoctors.length, username: u, role: "DOCTOR", is_active: true } };
+    // Sample mode has no email, so the link is returned for testing only.
+    const token = Array.from({ length: 64 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
+    mockInvites[token] = { name: body.full_name.trim(), used: false };
+    return {
+      message: "Doctor account created and invitation email sent successfully",
+      doctor: { user_id: 100 + mockDoctors.length, username: u, email: body.email.trim(), role: "DOCTOR", is_active: false },
+      sample_invite_path: `/accept-invitation?token=${token}`,
+    };
+  },
+  createStaff: async (role, body) => {
+    if (role === "DOCTOR") return mock.createDoctor(body);
+    await wait(500);
+    const u = (body.username || "").trim();
+    if (u.length < 3) throw new ApiError(400, "Username must contain 3 to 100 characters");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((body.email || "").trim())) throw new ApiError(400, "A valid email address is required");
+    if (!(body.full_name || "").trim()) throw new ApiError(400, "Full name is required");
+    if (mockDoctors.includes(u)) throw new ApiError(409, "Username or email already exists");
+    mockDoctors.push(u);
+    const token = Array.from({ length: 64 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
+    mockInvites[token] = { name: body.full_name.trim(), used: false };
+    return {
+      message: "Account created and invitation email sent successfully",
+      doctor: { username: u, email: body.email.trim(), role, is_active: false },
+      sample_invite_path: `/accept-invitation?token=${token}`,
+    };
+  },
+  listFollowUps: async () => {
+    await wait(200);
+    const rows = Object.entries(mockFollowUps).flatMap(([stayId, list]) => list.map((f) => ({ ...f, stay_id: stayId })));
+    rows.sort((a, b) => new Date(a.follow_up_date) - new Date(b.follow_up_date));
+    return rows;
+  },
+  listPendingReviews: async () => {
+    await wait(200);
+    return prescriptions.filter((p) => p.status === "PENDING_REVIEW");
+  },
+  validateInvitation: async (token) => {
+    await wait(300);
+    const i = mockInvites[token];
+    if (!i || i.used) throw new ApiError(400, "Invitation is invalid, expired, or already used");
+    return { valid: true, doctor_name: i.name };
+  },
+  acceptInvitation: async (token, password) => {
+    await wait(400);
+    const i = mockInvites[token];
+    if (!i || i.used) throw new ApiError(400, "Invitation is invalid, expired, or already used");
+    if (typeof password !== "string" || password.length < 12 || password.length > 128) throw new ApiError(400, "Password must contain 12 to 128 characters");
+    i.used = true;
+    return { message: "Invitation accepted. You can now log in." };
   },
 
   // Paramedic side (sample data). The NEWS2 scoring below only exists for sample mode;

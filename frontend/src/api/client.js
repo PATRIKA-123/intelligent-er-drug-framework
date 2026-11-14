@@ -1,6 +1,7 @@
 // Thin fetch wrapper: adds the token, turns errors into ApiError,
 // and tells the app to sign out when the backend says 401 (token expired).
 
+// Deployed builds: set VITE_API_BASE to the backend URL (no trailing slash). Dev uses the Vite proxy.
 const BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
 
 export class ApiError extends Error {

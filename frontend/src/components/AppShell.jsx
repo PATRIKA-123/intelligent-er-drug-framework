@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_CONFIG } from "../auth/roles";
 import Icon from "./Icon";
-import Mascot from "./Mascot";
+import Logo from "./Logo";
 import RightPanel from "./RightPanel";
 import { CaseNavProvider } from "./CaseNav";
 import UtilityRail from "./UtilityRail";
@@ -39,7 +39,7 @@ export default function AppShell() {
       {/* Desktop header */}
       <header className="mb-8 hidden flex-wrap items-center justify-center gap-3 md:flex">
         <Link to={cfg.home} aria-label="Home" className="flex h-12 w-12 items-center justify-center rounded-full bg-surface">
-          <Mascot size={28} outline label="" />
+          <Logo size={28} />
         </Link>
         <nav aria-label="Main" className="flex gap-1 rounded-full bg-surface p-1.5">
           {cfg.items.map((it) => (
@@ -53,8 +53,8 @@ export default function AppShell() {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Jump to a stay ID"
-            aria-label="Jump to a stay by ID"
+            placeholder="Jump to a visit ID"
+            aria-label="Jump to an ER visit by ID"
             className="min-w-0 flex-1 bg-transparent text-sm outline-none"
           />
           <span className="rounded-lg border border-line px-1.5 py-0.5 text-xs text-muted">Enter</span>
@@ -88,7 +88,7 @@ export default function AppShell() {
       {/* Phone top row */}
       <div className="mb-4 flex items-center justify-between md:hidden">
         <Link to={cfg.home} aria-label="Home" className="flex h-11 w-11 items-center justify-center rounded-full bg-surface">
-          <Mascot size={24} outline label="" />
+          <Logo size={24} />
         </Link>
         <span className="rounded-full bg-surface px-3 py-1.5 text-xs font-semibold">{cfg.label}</span>
       </div>
@@ -111,7 +111,7 @@ export default function AppShell() {
             to={it.to}
             end
             className={({ isActive }) =>
-              `flex min-h-11 min-w-[72px] flex-col items-center justify-center gap-0.5 text-[11px] ${
+              `flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] ${
                 isActive ? "font-semibold text-ink" : "font-medium text-muted"
               }`
             }
@@ -132,7 +132,7 @@ export default function AppShell() {
         <button
           type="button"
           onClick={logout}
-          className="flex min-h-11 min-w-[72px] flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-muted"
+          className="flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-muted"
         >
           <Icon name="logout" size={22} />
           Sign out

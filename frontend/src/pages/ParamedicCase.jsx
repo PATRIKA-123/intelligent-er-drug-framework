@@ -367,8 +367,8 @@ export default function ParamedicCase() {
               </div>
               <p className="m-0 text-sm">
                 {c.stay_id
-                  ? <>ER staff linked this case to ER stay <b>{c.stay_id}</b>.</>
-                  : "ER staff will link this case to the patient's ER record. You do not need a stay ID."}
+                  ? <>ER staff linked this case to ER visit <b>{c.stay_id}</b>.</>
+                  : "ER staff will link this case to the patient's ER record. You do not need an ER visit ID."}
               </p>
               {ts === "IN_TRANSIT" && (
                 <Button onClick={() => run("arrive", () => api.setTransportStatus(caseId, "ARRIVED_AT_DESTINATION"), "Marked as arrived at the hospital.")} disabled={busy === "arrive"} className="h-14 text-base">

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
+import { useRegisterVisitNav } from "../components/CaseNav";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import Icon from "../components/Icon";
@@ -13,6 +14,7 @@ import ProvenanceTag from "../components/ProvenanceTag";
 import Button from "../components/Button";
 import { ErrorState, Loading } from "../components/States";
 import { formatTime } from "../lib/format";
+import FollowUps from "../components/FollowUps";
 import { invalidateStays } from "../lib/staysCache";
 import { SCORE_NAME, SCORE_REF } from "../lib/terms";
 
@@ -73,6 +75,8 @@ export default function StayDetail() {
       .catch((error) => setState({ loading: false, error, summary: null, obs: [] }));
   }, [stayId]);
   useEffect(load, [load]);
+  const visitNav = useMemo(() => (state.summary ? { stayId, summary: state.summary } : null), [stayId, state.summary]);
+  useRegisterVisitNav(visitNav);
 
   async function runDecisionSupport() {
     setRunning(true);
@@ -89,7 +93,7 @@ export default function StayDetail() {
     }
   }
 
-  if (state.loading && !state.summary) return <Loading label="Loading stay" />;
+  if (state.loading && !state.summary) return <Loading label="Loading visit" />;
   if (state.error) return <ErrorState error={state.error} onRetry={load} />;
 
   const s = state.summary;
@@ -111,23 +115,23 @@ export default function StayDetail() {
         </Link>
         <div className="flex flex-wrap items-center gap-4">
           <h1 className="m-0 text-[40px] font-semibold leading-none tracking-tight md:text-5xl">
-            {s.stay?.case_code || `Stay ${s.stay?.stay_id}`}
+            {s.stay?.case_code || `Visit ${s.stay?.stay_id}`}
           </h1>
           <RiskBadge size="lg" riskText={n?.risk_level} score={n?.total_news2_score} />
           {s.stay?.case_status && <StatusChip status={s.stay.case_status} />}
         </div>
         <p className="m-0 text-sm text-muted">
-          Stay {s.stay?.stay_id} · Subject {s.patient?.subject_id ?? s.stay?.subject_id}
+          Visit {s.stay?.stay_id} · Patient {s.patient?.subject_id ?? s.stay?.subject_id}
           {s.stay?.chiefcomplaint ? ` · ${s.stay.chiefcomplaint}` : ""}
         </p>
       </div>
 
       {(alerts.length > 0 || findings.length > 0 || staleSafety) && (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div id="visit-safety" className="grid scroll-mt-6 gap-4 md:grid-cols-2">
           <div className="flex flex-col gap-3">
             {alerts.map((a) => <AlertBanner key={a.alert_id} alert={a} />)}
             {alerts.length === 0 && (
-              <div className="rounded-panel bg-surface px-6 py-5 text-sm text-muted">No open alerts for this stay.</div>
+              <div className="rounded-panel bg-surface px-6 py-5 text-sm text-muted">No open alerts for this visit.</div>
             )}
           </div>
           <div className="flex flex-col gap-2">
@@ -149,9 +153,9 @@ export default function StayDetail() {
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <div className="flex flex-col gap-4">
-          <section className="panel">
+          <section id="visit-vitals" className="panel scroll-mt-6">
             <div className="flex flex-wrap items-baseline justify-between gap-3">
-              <h2 className="m-0 text-[22px] font-semibold tracking-tight">Latest observation</h2>
+              <h2 className="m-0 text-[22px] font-semibold tracking-tight">Latest vitals</h2>
               <span className="text-[13px] text-muted">{formatTime(o?.observation_time)}</span>
             </div>
             {o ? (
@@ -174,13 +178,13 @@ export default function StayDetail() {
                 </p>
               </>
             ) : (
-              <p className="mt-3 text-sm text-muted">No observation recorded for this stay yet.</p>
+              <p className="mt-3 text-sm text-muted">No vitals recorded for this visit yet.</p>
             )}
           </section>
 
           <section className="panel">
             <div className="flex flex-wrap items-baseline justify-between gap-3">
-              <h2 className="m-0 text-[22px] font-semibold tracking-tight">Vitals over the stay</h2>
+              <h2 className="m-0 text-[22px] font-semibold tracking-tight">Vitals during the visit</h2>
               <ChartLegend />
             </div>
             <VitalsChart observations={state.obs} />
@@ -191,7 +195,8 @@ export default function StayDetail() {
         <div className="flex flex-col gap-4">
           {n && (
             <section
-              className="flex flex-wrap items-center gap-5 rounded-panel p-6"
+              id="visit-score"
+              className="flex scroll-mt-6 flex-wrap items-center gap-5 rounded-panel p-6"
               style={{ background: "linear-gradient(135deg, #D3EAE3 0%, #E7DEF6 100%)" }}
             >
               <svg viewBox="0 0 140 140" width="132" height="132" role="img" aria-label={`${SCORE_NAME} ${n.total_news2_score} of a possible 20`}>
@@ -211,7 +216,7 @@ export default function StayDetail() {
             </section>
           )}
 
-          <section className="panel flex flex-col gap-3.5">
+          <section id="visit-summary" className="panel flex scroll-mt-6 flex-col gap-3.5">
             <h2 className="m-0 text-[22px] font-semibold tracking-tight">Clinical summary</h2>
             <SummaryRow title="Allergies" status={s.allergies?.status}>
               {s.allergies?.status === "RECORDED"
@@ -246,7 +251,7 @@ export default function StayDetail() {
             {isDoctor && (
               <>
                 <Button to={`/stays/${stayId}/prescribe`}>Prescribe</Button>
-                <Button variant="disabled" disabled>Discharge (next build)</Button>
+                <Button variant="outline" to={`/stays/${stayId}/discharge`}>Discharge</Button>
               </>
             )}
             {isStaff && (
@@ -254,12 +259,13 @@ export default function StayDetail() {
                 <Button onClick={runDecisionSupport} disabled={running}>
                   {running ? "Running..." : "Run decision support"}
                 </Button>
-                <Button variant="disabled" disabled>Add follow-up (next build)</Button>
+                <Button variant="outline" onClick={() => document.getElementById("follow-ups")?.scrollIntoView({ behavior: "smooth", block: "start" })}>Plan a follow-up</Button>
               </>
             )}
             {runMsg && <p role="status" className="m-0 text-sm text-muted">{runMsg}</p>}
             <p className="m-0 text-xs text-muted">Only the actions your role may use are shown.</p>
           </section>
+          <div id="follow-ups" className="scroll-mt-6"><FollowUps stayId={stayId} canAdd={isStaff} /></div>
         </div>
       </div>
     </div>

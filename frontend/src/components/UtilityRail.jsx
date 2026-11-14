@@ -4,8 +4,8 @@ import { useAuth } from "../auth/AuthContext";
 import { ROLE_CONFIG } from "../auth/roles";
 import { useStays } from "../lib/useStays";
 import Icon from "./Icon";
-import Mascot from "./Mascot";
-import { STEP_DEFS, stepDone, useCaseNav } from "./CaseNav";
+import Logo from "./Logo";
+import { STEP_DEFS, VISIT_SECTIONS, stepDone, useCaseNav, useVisitNav } from "./CaseNav";
 import { riskLevel } from "../lib/risk";
 import { SCORE_NAME, SCORE_REF } from "../lib/terms";
 
@@ -15,7 +15,7 @@ function Attention({ home }) {
   const { counts, loading } = useStays();
   const n = counts.high + counts.medium;
   return (
-    <Link to={home} aria-label={`Stays needing attention: ${loading ? "loading" : n}`} title="Stays needing attention" className={BTN}>
+    <Link to={home} aria-label={`Patients needing attention: ${loading ? "loading" : n}`} title="Patients needing attention" className={BTN}>
       <Icon name="bell" size={22} />
       {!loading && n > 0 && (
         <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-risk-high-bg px-1 text-[11px] font-bold text-white">
@@ -32,6 +32,7 @@ export default function UtilityRail() {
   const cfg = ROLE_CONFIG[user.role];
   const [help, setHelp] = useState(false);
   const nav = useCaseNav();
+  const visit = useVisitNav();
   const c = nav?.c;
   const firstTodo = c ? STEP_DEFS.find((s) => !stepDone(c, s.key))?.key : null;
   const risk = c?.news2?.complete ? riskLevel(c.news2.risk_level) : null;
@@ -49,7 +50,7 @@ export default function UtilityRail() {
     <>
       <aside aria-label="Tools" className="fixed bottom-6 left-4 top-6 z-30 hidden w-16 flex-col items-center gap-3 overflow-y-auto lg:flex">
         <Link to={cfg.home} aria-label="Home" title="Home" className="flex h-14 w-14 flex-none items-center justify-center rounded-full bg-surface">
-          <Mascot size={30} outline label="" />
+          <Logo size={30} />
         </Link>
 
         {c && (
@@ -80,8 +81,36 @@ export default function UtilityRail() {
           </div>
         )}
 
+        {visit && (
+          <div role="group" aria-label="On this page" className="flex flex-none flex-col items-center gap-2 rounded-full bg-surface p-2">
+            {VISIT_SECTIONS.map((sec) => (
+              <button
+                key={sec.id}
+                type="button"
+                onClick={() => document.getElementById(sec.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                aria-label={`Jump to ${sec.label}`}
+                title={sec.label}
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-soft hover:bg-mint"
+              >
+                <Icon name={sec.icon} size={20} />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {!c && !visit && (user.role === "ER_STAFF" || user.role === "ADMIN") && (
+          <div role="group" aria-label="Quick links" className="flex flex-none flex-col items-center gap-2 rounded-full bg-surface p-2">
+            <Link to="/incoming" aria-label="Incoming ambulance cases" title="Incoming ambulance cases" className="flex h-11 w-11 items-center justify-center rounded-full bg-soft hover:bg-mint">
+              <Icon name="truck" size={20} />
+            </Link>
+            <Link to="/follow-ups" aria-label="Follow-ups" title="Follow-ups" className="flex h-11 w-11 items-center justify-center rounded-full bg-soft hover:bg-mint">
+              <Icon name="calendar" size={20} />
+            </Link>
+          </div>
+        )}
+
         <div role="group" aria-label="Tools" className="flex flex-none flex-col items-center gap-1 rounded-full border border-[#C9CED8] p-2">
-          <button type="button" className={BTN} aria-label="Search by stay ID" title="Search by stay ID"
+          <button type="button" className={BTN} aria-label="Search by visit ID" title="Search by visit ID"
             onClick={() => document.getElementById("stay-jump")?.focus()}>
             <Icon name="search" size={21} />
           </button>

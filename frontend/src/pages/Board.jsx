@@ -8,7 +8,7 @@ import { riskLevel } from "../lib/risk";
 import { fmtNum, formatTime, minutesAgo } from "../lib/format";
 
 const FILTERS = [
-  { id: "all", label: "All stays" },
+  { id: "all", label: "All patients" },
   { id: "high", label: "HIGH only" },
   { id: "medium", label: "MEDIUM only" },
   { id: "active", label: "Active only" },
@@ -16,13 +16,13 @@ const FILTERS = [
 const ORDER = { high: 0, medium: 1, lowmed: 2, low: 3 };
 
 function vitalsLine(o) {
-  if (!o) return "No observation yet";
+  if (!o) return "No vitals yet";
   return `RR ${fmtNum(o.respiratory_rate)} · SpO2 ${fmtNum(o.spo2)}% · SBP ${fmtNum(o.systolic_bp)} · HR ${fmtNum(o.heart_rate)} · ${fmtNum(o.temperature_celsius)} °C`;
 }
 
 export default function Board() {
   const { pathname } = useLocation();
-  const title = pathname === "/stays" ? "Stays" : "Live board";
+  const title = pathname === "/stays" ? "Patients" : "Live board";
   const [state, setState] = useState({ loading: true, error: null, stays: [] });
   const [filter, setFilter] = useState("all");
 
@@ -59,7 +59,7 @@ export default function Board() {
             Highest risk first. Scores are decision support and need clinician review.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2.5" role="group" aria-label="Filter stays">
+        <div className="flex flex-wrap gap-2.5" role="group" aria-label="Filter patients">
           {FILTERS.map((f) => (
             <button
               key={f.id}
@@ -76,16 +76,16 @@ export default function Board() {
         </div>
       </div>
 
-      {state.loading && <Loading label="Loading stays" />}
+      {state.loading && <Loading label="Loading patients" />}
       {state.error && <ErrorState error={state.error} onRetry={() => load(true)} />}
 
       {!state.loading && !state.error && (
         <div className="rounded-panel bg-surface p-3">
           <div className="hidden grid-cols-[150px_1.2fr_1.4fr_130px_2fr_90px] gap-3 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-muted md:grid">
-            <span>Risk</span><span>Case and stay</span><span>Patient</span><span>Status</span><span>Latest vitals</span><span>Last obs</span>
+            <span>Risk</span><span>Visit</span><span>Patient</span><span>Status</span><span>Latest vitals</span><span>Last vitals</span>
           </div>
           {shown.length === 0 && (
-            <EmptyState title="No stays match this filter" hint="Try another filter, or wait for new arrivals." />
+            <EmptyState title="No patients match this filter" hint="Try another filter, or wait for new arrivals." />
           )}
           {shown.map((r) => (
             <Link
@@ -95,11 +95,11 @@ export default function Board() {
             >
               <span><RiskBadge riskText={r.latest_news2?.risk_level} score={r.latest_news2?.total_news2_score} /></span>
               <span className="flex flex-col">
-                <span className="text-[15px] font-semibold">{r.case_code || `Stay ${r.stay_id}`}</span>
-                {r.case_code && <span className="text-xs text-muted">Stay {r.stay_id}</span>}
+                <span className="text-[15px] font-semibold">{r.case_code || `Visit ${r.stay_id}`}</span>
+                {r.case_code && <span className="text-xs text-muted">Visit {r.stay_id}</span>}
               </span>
               <span className="flex flex-col text-sm">
-                <span>Subject {r.subject_id}{r.gender ? ` · ${r.gender}` : ""}</span>
+                <span>Patient {r.subject_id}{r.gender ? ` · ${r.gender}` : ""}</span>
                 {r.chiefcomplaint && <span className="text-xs text-muted">{r.chiefcomplaint}</span>}
               </span>
               <span>{r.case_status && <StatusChip status={r.case_status} />}</span>

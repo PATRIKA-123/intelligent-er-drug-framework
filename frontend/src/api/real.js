@@ -1,7 +1,7 @@
 // Calls the real backend. Paths and response shapes come from reading the
 // backend code (see the contract report). Fields marked "needs backend" in
 // mock.js are not returned by the real API yet.
-import { request } from "./client.js";
+import { request, ApiError } from "./client.js";
 import { rememberCase, rememberedCases } from "../lib/myCases.js";
 
 export const real = {
@@ -31,6 +31,16 @@ export const real = {
     );
     return { ...data, stays };
   },
+  // Assigned doctor, follow-ups, prescriptions and discharge for a stay.
+  // The server has no "list doctors" route yet; the screen falls back to typing a doctor ID.
+  listDoctors: async () => { const r = await request("/doctors"); return r.doctors || r; },
+  assignDoctor: (stayId, doctorUserId, notes) =>
+    request(`/post-er/${stayId}/assign-doctor`, { method: "POST", body: { doctor_user_id: Number(doctorUserId), ...(notes ? { notes } : {}) } }),
+  createDischarge: (stayId, body) => request(`/post-er/${stayId}/discharge`, { method: "POST", body }),
+  // Not in the server yet: ER staff confirm the patient has left after discharge.
+  recordDeparture: (stayId) => request(`/stays/${stayId}/departure`, { method: "POST", body: {} }),
+  getPostEr: (stayId) => request(`/post-er/${stayId}`),
+  createFollowUp: (stayId, body) => request(`/post-er/${stayId}/follow-ups`, { method: "POST", body }),
   getStaySummary: (stayId) => request(`/clinical-summary/${stayId}`),
   getObservations: (stayId) => request(`/stays/${stayId}/observations`),
   getNews2Results: (stayId) => request(`/stays/${stayId}/news2`),
@@ -49,6 +59,17 @@ export const real = {
 
   // Admin
   createDoctor: (body) => request("/doctors", { method: "POST", body }),
+  // The server can only create doctors so far; ER staff and paramedic accounts are not supported yet.
+  createStaff: async (role, body) => {
+    if (role === "DOCTOR") return real.createDoctor(body);
+    throw new ApiError(501, "The server cannot create ER staff or paramedic accounts yet.");
+  },
+  // No endpoint lists these across visits yet; the panels explain that instead of guessing.
+  listFollowUps: async () => { throw new ApiError(501, "The server cannot list follow-ups across visits yet."); },
+  listPendingReviews: async () => { throw new ApiError(501, "The server cannot list medicines waiting for review yet."); },
+  // Public (no sign-in): the doctor opens the emailed link.
+  validateInvitation: (token) => request("/doctors/validate-invitation", { method: "POST", body: { token } }),
+  acceptInvitation: (token, password) => request("/doctors/accept-invitation", { method: "POST", body: { token, password } }),
 
   // Paramedic side. The case page reads the backend's "workflow" snapshot.
   createCase: async (body) => {

@@ -3,7 +3,7 @@ import { Navigate, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { homeFor } from "../auth/roles";
 import { USE_MOCK } from "../api";
-import Mascot from "../components/Mascot";
+import BrandPill from "../components/BrandPill";
 import Icon from "../components/Icon";
 
 const SHORTCUTS = [
@@ -55,49 +55,43 @@ export default function Login() {
           "radial-gradient(60% 55% at 18% 20%, rgba(211,234,227,0.55) 0%, rgba(211,234,227,0) 70%), radial-gradient(55% 60% at 85% 80%, rgba(231,222,246,0.55) 0%, rgba(231,222,246,0) 70%), radial-gradient(40% 45% at 80% 15%, rgba(120,160,255,0.35) 0%, rgba(120,160,255,0) 70%), #0E1016",
       }}
     >
+      <BrandPill />
+      <h1 className="sr-only">Sign in</h1>
       <form
         onSubmit={onSubmit}
         noValidate
-        className="flex w-full max-w-[420px] flex-col gap-5 rounded-[32px] border border-white/20 bg-[rgba(18,20,28,0.78)] px-9 pb-8 pt-10 shadow-2xl"
+        className="flex w-full max-w-[400px] flex-col gap-4 rounded-[32px] border border-white/20 bg-[rgba(18,20,28,0.78)] p-7 shadow-2xl"
       >
-        <div className="flex flex-col items-center gap-3">
-          <Mascot size={96} />
-          <div className="text-center">
-            <h1 className="m-0 text-[32px] font-semibold leading-tight tracking-tight">Welcome back</h1>
-            <p className="mt-2 text-sm text-[#D5D9E2]">Sign in to the emergency care workspace</p>
-          </div>
-        </div>
-
         {expired && (
-          <p role="status" className="m-0 rounded-2xl bg-white/10 px-4 py-3 text-center text-sm">
+          <p role="status" className="m-0 rounded-full bg-white/10 px-5 py-3 text-center text-sm">
             Your session expired. Please sign in again.
           </p>
         )}
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="username" className="text-[13px] font-medium text-[#E6E9F0]">Username</label>
+          <label htmlFor="username" className="pl-4 text-[13px] font-medium text-[#E6E9F0]">Username</label>
           <input
             id="username"
             autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="h-12 rounded-2xl border border-white/30 bg-white/10 px-4 text-[15px] font-medium text-white placeholder:text-white/40"
+            className="h-13 rounded-full border border-white/30 bg-white/10 px-5 text-[15px] font-medium text-white"
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="password" className="text-[13px] font-medium text-[#E6E9F0]">Password</label>
+          <label htmlFor="password" className="pl-4 text-[13px] font-medium text-[#E6E9F0]">Password</label>
           <input
             id="password"
             type="password"
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="h-12 rounded-2xl border border-white/30 bg-white/10 px-4 text-[15px] font-medium text-white"
+            className="h-13 rounded-full border border-white/30 bg-white/10 px-5 text-[15px] font-medium text-white"
           />
         </div>
 
         {error && (
-          <p role="alert" className="m-0 flex items-center gap-2 text-[13px] text-[#FFB4B4]">
+          <p role="alert" className="m-0 flex items-center gap-2 rounded-full bg-[rgba(255,120,120,0.14)] px-5 py-3 text-[13px] text-[#FFB4B4]">
             <Icon name="alert" size={16} color="#FFB4B4" />
             {error}
           </p>
@@ -129,7 +123,7 @@ export default function Login() {
           </div>
         )}
       </form>
-      <p className="m-0 text-center text-xs text-[#B8BECB]">
+      <p className="m-0 rounded-full border border-white/15 bg-white/5 px-5 py-2 text-center text-xs text-[#C9CED8]">
         {USE_MOCK ? "Sample data only. Nothing here is a real patient." : "Authorized staff only."}
       </p>
     </div>

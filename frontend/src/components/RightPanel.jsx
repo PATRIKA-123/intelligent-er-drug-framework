@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_CONFIG } from "../auth/roles";
 import { useStays } from "../lib/useStays";
 import Mascot from "./Mascot";
-import { useCaseNav } from "./CaseNav";
-import { fmtNum } from "../lib/format";
+import { useCaseNav, useVisitNav } from "./CaseNav";
+import { fmtNum, formatDateTime } from "../lib/format";
 import RiskBadge from "./RiskBadge";
 import StatusChip from "./StatusChip";
 
@@ -47,7 +47,7 @@ function StaffPanel() {
         {loading && <p role="status" className="m-0 text-sm text-muted">Loading...</p>}
         {error && (
           <div role="alert" className="flex flex-col items-start gap-2 text-sm text-muted">
-            <span>Could not load stays{error.message ? `: ${error.message}` : "."}</span>
+            <span>Could not load patients{error.message ? `: ${error.message}` : "."}</span>
             <button type="button" onClick={reload} className="h-11 rounded-full border border-ink px-4 font-semibold text-ink">
               Try again
             </button>
@@ -65,7 +65,7 @@ function StaffPanel() {
               <Link to={`/stays/${r.stay_id}`} className="flex flex-col gap-1.5 rounded-2xl bg-soft px-3.5 py-3 hover:bg-page">
                 <span className="flex items-center justify-between gap-2">
                   <RiskBadge riskText={r.latest_news2?.risk_level} score={r.latest_news2?.total_news2_score} />
-                  <span className="text-xs text-muted">Stay {r.stay_id}</span>
+                  <span className="text-xs text-muted">Visit {r.stay_id}</span>
                 </span>
                 {r.chiefcomplaint && <span className="truncate text-[13px]">{r.chiefcomplaint}</span>}
               </Link>
@@ -74,6 +74,120 @@ function StaffPanel() {
         </ul>
       </Card>
     </>
+  );
+}
+
+
+// Small loader shared by the cards that call an endpoint which may not exist on the real server.
+function useLoad(fn, deps) {
+  const [st, setSt] = useState({ loading: true, error: null, data: null });
+  useEffect(() => {
+    let live = true;
+    setSt({ loading: true, error: null, data: null });
+    fn().then((data) => live && setSt({ loading: false, error: null, data }))
+      .catch((error) => live && setSt({ loading: false, error, data: null }));
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return st;
+}
+
+function Note({ children }) {
+  return <p className="m-0 text-sm text-muted">{children}</p>;
+}
+
+function Row({ k, v }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <dt className="text-xs font-semibold text-muted">{k}</dt>
+      <dd className="m-0 text-sm font-medium">{v || <span className="text-muted">None yet</span>}</dd>
+    </div>
+  );
+}
+
+function VisitCard({ visit }) {
+  const { stayId, summary: s } = visit;
+  const post = useLoad(() => api.getPostEr(stayId), [stayId]);
+  const d = post.data;
+  const alerts = s.clinical_alerts?.alerts?.length || 0;
+  const pending = d?.prescriptions?.filter((p) => p.status === "PENDING_REVIEW").length || 0;
+  return (
+    <Card title="This visit">
+      <dl className="m-0 flex flex-col gap-2.5">
+        <Row k="Visit ID" v={s.stay?.stay_id} />
+        <Row k="Arrived" v={s.stay?.intime ? formatDateTime(s.stay.intime) : null} />
+        <Row k="Doctor" v={post.loading ? "Loading..." : d?.assigned_doctor?.full_name || null} />
+        <Row k="Open alerts" v={String(alerts)} />
+        <Row k="Medicines waiting for review" v={post.loading ? "Loading..." : String(pending)} />
+        <Row k="Follow-ups planned" v={post.loading ? "Loading..." : String(d?.follow_ups?.length || 0)} />
+        <Row k="Discharge" v={post.loading ? "Loading..." : d?.discharge ? (d.discharge.departed_at ? "Patient has left" : `${d.discharge.discharge_status}, waiting to leave`) : "Not discharged"} />
+      </dl>
+      {post.error && <p role="alert" className="mb-0 mt-3 text-xs text-muted">Some details could not be loaded.</p>}
+    </Card>
+  );
+}
+
+function FollowUpsCard() {
+  const st = useLoad(() => api.listFollowUps(), []);
+  const rows = (st.data || []).filter((f) => !f.status || !/DONE|COMPLETE|CANCEL/i.test(f.status)).slice(0, 6);
+  return (
+    <Card title="Coming up">
+      {st.loading && <Note>Loading...</Note>}
+      {st.error && <Note>{st.error.status === 501 ? "The server cannot list follow-ups across visits yet. Open a visit to see its own." : "Could not load follow-ups."}</Note>}
+      {!st.loading && !st.error && rows.length === 0 && <Note>No follow-ups planned yet.</Note>}
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        {rows.map((f, i) => (
+          <li key={i}>
+            <Link to={`/stays/${f.stay_id}`} className="flex flex-col gap-1 rounded-2xl bg-soft px-3.5 py-3 hover:bg-page">
+              <span className="text-sm font-semibold">{f.follow_up_type}</span>
+              <span className="text-xs text-muted">{formatDateTime(f.follow_up_date)} · Visit {f.stay_id}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function ReviewCard() {
+  const st = useLoad(() => api.listPendingReviews(), []);
+  const rows = st.data || [];
+  return (
+    <Card title="Medicines waiting for review">
+      {st.loading && <Note>Loading...</Note>}
+      {st.error && <Note>{st.error.status === 501 ? "The server cannot list these across visits yet. Open a visit to see its medicines." : "Could not load medicines."}</Note>}
+      {!st.loading && !st.error && rows.length === 0 && <Note>Nothing waiting for review.</Note>}
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        {rows.slice(0, 6).map((p) => (
+          <li key={p.prescription_id}>
+            <Link to={`/stays/${p.stay_id}`} className="flex flex-col gap-1 rounded-2xl bg-soft px-3.5 py-3 hover:bg-page">
+              <span className="text-sm font-semibold">{p.medication_name}</span>
+              <span className="text-xs text-muted">Visit {p.stay_id}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function StaffCard() {
+  const st = useLoad(() => api.listDoctors(), []);
+  const docs = Array.isArray(st.data) ? st.data : null;
+  return (
+    <Card title="Doctors on the system">
+      {st.loading && <Note>Loading...</Note>}
+      {!st.loading && !docs && <Note>The server cannot list doctors yet.</Note>}
+      {docs && docs.length === 0 && <Note>No doctors yet.</Note>}
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        {(docs || []).map((d) => (
+          <li key={d.user_id} className="rounded-2xl bg-soft px-3.5 py-3">
+            <div className="text-sm font-semibold">{d.full_name}</div>
+            {d.specialization && <div className="text-xs text-muted">{d.specialization}</div>}
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 
@@ -87,7 +201,7 @@ function ParamedicPanel() {
     return () => { live = false; };
   }, []);
   return (
-    <Card title="Active cases">
+    <Card title="Active ambulance cases">
       {state.loading && <p role="status" className="m-0 text-sm text-muted">Loading...</p>}
       {state.error && <p role="alert" className="m-0 text-sm text-muted">Could not load cases.</p>}
       <ul className="m-0 flex list-none flex-col gap-2 p-0">
@@ -115,7 +229,7 @@ function CaseSnapshot({ c }) {
     ["ER stay", c.stay_id],
   ];
   return (
-    <Card title="This case">
+    <Card title="This ambulance case">
       <dl className="m-0 flex flex-col gap-2.5">
         {rows.map(([k, val]) => (
           <div key={k} className="flex flex-col gap-0.5">
@@ -133,7 +247,16 @@ export default function RightPanel() {
   const { user } = useAuth();
   const cfg = ROLE_CONFIG[user.role];
   const nav = useCaseNav();
+  const visit = useVisitNav();
+  const { pathname } = useLocation();
   if (user.role === "PATIENT") return null;
+  let body;
+  if (nav?.c || user.role === "PARAMEDIC") body = <ParamedicPanel />;
+  else if (visit) body = <><VisitCard visit={visit} /><StaffPanel /></>;
+  else if (pathname === "/follow-ups") body = <><FollowUpsCard /><StaffPanel /></>;
+  else if (pathname === "/admin") body = <><StaffCard /><StaffPanel /></>;
+  else if (user.role === "DOCTOR") body = <><ReviewCard /><StaffPanel /></>;
+  else body = <StaffPanel />;
   return (
     <aside aria-label="Overview" className="sticky top-6 hidden w-[320px] flex-none flex-col gap-4 self-start xl:flex">
       <section className="flex items-center gap-3 rounded-panel bg-mint p-4">
@@ -146,7 +269,7 @@ export default function RightPanel() {
         </div>
       </section>
       {nav?.c && <CaseSnapshot c={nav.c} />}
-      {nav?.c || user.role === "PARAMEDIC" ? <ParamedicPanel /> : <StaffPanel />}
+      {body}
     </aside>
   );
 }

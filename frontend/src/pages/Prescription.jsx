@@ -66,7 +66,7 @@ export default function Prescription() {
         </Link>
         <h1 className="m-0 text-[40px] font-semibold leading-none tracking-tight md:text-5xl">New prescription</h1>
         <p className="m-0 text-sm text-muted">
-          Stay {stayId}. Only the assigned doctor can prescribe; the server checks this.
+          Visit {stayId}. Only the assigned doctor can prescribe; the server checks this.
         </p>
       </div>
 

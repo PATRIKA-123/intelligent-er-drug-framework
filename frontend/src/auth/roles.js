@@ -19,18 +19,18 @@ export const ROLE_CONFIG = {
     label: "Doctor",
     home: "/stays",
     items: [
-      { label: "Stays", to: "/stays", icon: "home" },
-      { label: "Prescriptions", to: "/prescriptions", icon: "pill" },
+      { label: "Patients", to: "/stays", icon: "home" },
     ],
   },
   ADMIN: {
     label: "Admin",
     home: "/admin",
     items: [
-      { label: "Doctors", to: "/admin", icon: "home" },
-      { label: "Board", to: "/board", icon: "list" },
+      { label: "Staff", to: "/admin", icon: "user" },
+      { label: "Board", to: "/board", icon: "home" },
       { label: "Incoming", to: "/incoming", icon: "list" },
-      { label: "Cases", to: "/paramedic", icon: "list" },
+      { label: "Follow-ups", to: "/follow-ups", icon: "calendar" },
+      { label: "Cases", to: "/paramedic", icon: "truck" },
     ],
   },
   PATIENT: {
