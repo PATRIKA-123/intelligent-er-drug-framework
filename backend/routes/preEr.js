@@ -8,6 +8,7 @@ const { getNormalizedMedications } = require("../services/medicationNormalizatio
 const { getClinicalSummary } = require("../services/clinicalSummaryService");
 const { getClinicalContext } = require("../services/clinicalContextService");
 const { generateAndPersistAlerts } = require("../services/alertService");
+const { requireCaseAccess } = require("../services/accessPolicy");
 
 const VALID_TRANSPORT_STATUSES = [
   "DISPATCHED",
@@ -400,6 +401,7 @@ router.post(
   "/:id/assessments",
   authMiddleware,
   authMiddleware.requireRole("PARAMEDIC", "ADMIN"),
+  requireCaseAccess(),
   async (req, res) => {
     try {
       const { id: caseId } = req.params;
@@ -494,6 +496,7 @@ router.post(
 router.get(
   "/:id/assessments",
   authMiddleware,
+  requireCaseAccess(),
   async (req, res) => {
     try {
       const { id: caseId } = req.params;
@@ -532,6 +535,7 @@ router.post(
   "/:id/transport",
   authMiddleware,
   authMiddleware.requireRole("PARAMEDIC", "ADMIN"),
+  requireCaseAccess(),
   async (req, res) => {
     try {
       const { id: caseId } = req.params;
@@ -611,6 +615,7 @@ router.post(
 router.get(
   "/:id/transport",
   authMiddleware,
+  requireCaseAccess(),
   async (req, res) => {
     try {
       const { id: caseId } = req.params;
@@ -649,6 +654,7 @@ router.post(
   "/:id/vitals",
   authMiddleware,
   authMiddleware.requireRole("PARAMEDIC", "ADMIN"),
+  requireCaseAccess(),
   async (req, res) => {
     try {
       const { id: caseId } = req.params;
@@ -726,6 +732,7 @@ router.post(
 router.get(
   "/:id/vitals",
   authMiddleware,
+  requireCaseAccess(),
   async (req, res) => {
     try {
       const { id: caseId } = req.params;
@@ -760,6 +767,7 @@ router.get(
 router.get(
   "/:id/clinical-risk",
   authMiddleware,
+  requireCaseAccess(),
   async (req, res) => {
     try {
       const { id: caseId } = req.params;
@@ -792,6 +800,7 @@ router.post(
   "/:id/clinical-risk",
   authMiddleware,
   authMiddleware.requireRole("PARAMEDIC", "ADMIN"),
+  requireCaseAccess(),
   async (req, res) => {
     try {
       const { id: caseId } = req.params;
@@ -878,6 +887,7 @@ const computed = buildNEWS2PreviewFromCase(
 router.get(
   "/:id/news2",
   authMiddleware,
+  requireCaseAccess(),
   async (req, res) => {
     try {
       const { id: caseId } = req.params;
@@ -914,6 +924,7 @@ router.patch(
   "/:id/transport",
   authMiddleware,
   authMiddleware.requireRole("PARAMEDIC", "ADMIN"),
+  requireCaseAccess(),
   async (req, res) => {
     try {
       const { id: caseId } = req.params;
@@ -996,6 +1007,7 @@ if (
 router.get(
   "/:id/workflow",
   authMiddleware,
+  requireCaseAccess(),
   async (req, res) => {
     try {
       const { id: caseId } = req.params;
@@ -1021,6 +1033,7 @@ router.get(
 router.get(
   "/:id/integrated-summary",
   authMiddleware,
+  requireCaseAccess(),
   async (req, res) => {
     try {
       const { id: caseId } = req.params;
@@ -1062,6 +1075,7 @@ router.get(
 router.get(
   "/:id/handover-summary",
   authMiddleware,
+  requireCaseAccess(),
   async (req, res) => {
     try {
       const { id: caseId } = req.params;
@@ -1107,6 +1121,7 @@ router.post(
   "/:id/er-arrival",
   authMiddleware,
   authMiddleware.requireRole("PARAMEDIC", "ADMIN", "ER_STAFF"),
+  requireCaseAccess("id", ["PRE_ER"]),
   async (req, res) => {
     const { id: caseId } = req.params;
     const { stay_id: stayId } = req.body;

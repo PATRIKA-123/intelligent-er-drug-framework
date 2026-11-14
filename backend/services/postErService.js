@@ -1,6 +1,7 @@
-const pool = require("../db");
+﻿const pool = require("../db");
 const { getClinicalSummary } = require("./clinicalSummaryService");
 const { getPrescriptions } = require("./prescriptionService");
+const { getColumns } = require("./schemaCapabilities");
 
 async function getPostErData(stayId) {
   const clinicalSummary = await getClinicalSummary(stayId);
@@ -41,14 +42,27 @@ async function getPostErData(stayId) {
 }
 
 
+
 async function getAssignedDoctor(stayId) {
+  const columns = await getColumns("stay_doctor_assignments");
+
+  const assignmentDateColumn = columns.has("assigned_at")
+    ? "assigned_at"
+    : "created_at";
+
+  if (!columns.has(assignmentDateColumn)) {
+    throw new Error(
+      "Neither assigned_at nor created_at exists in stay_doctor_assignments"
+    );
+  }
+
   const result = await pool.query(
     `SELECT
        a.assignment_id,
        a.stay_id,
        a.doctor_user_id,
        a.assigned_by,
-       a.assigned_at,
+       a.${assignmentDateColumn} AS assigned_at,
        a.status,
        a.notes,
        u.username,
@@ -67,6 +81,7 @@ async function getAssignedDoctor(stayId) {
 
   return result.rows[0] || null;
 }
+
 
 async function assignDoctorToStay(stayId, doctorUserId, assignedBy, notes) {
   const client = await pool.connect();

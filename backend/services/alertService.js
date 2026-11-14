@@ -180,6 +180,21 @@ const engineVersion = "phase6-v1";
     await client.query("BEGIN");
     transactionStarted = true;
 
+    // Only one processing run per stay at a time. The lock is released
+    // automatically at COMMIT or ROLLBACK. If another run holds it, refuse
+    // with 409 instead of waiting, so repeated requests cannot pile up.
+    const lock = await client.query(
+      `SELECT pg_try_advisory_xact_lock(hashtextextended($1::text, 0)) AS locked`,
+      [`decision_support:${stayId}`]
+    );
+    if (!lock.rows[0].locked) {
+      const busy = new Error(
+        "Decision-support processing is already in progress for this stay"
+      );
+      busy.statusCode = 409;
+      throw busy;
+    }
+
     // Delete old alerts first because they reference safety-result rows.
     const preDeleteResult = await client.query(
       `DELETE FROM clinical_alerts WHERE stay_id = $1`,

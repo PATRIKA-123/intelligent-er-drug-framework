@@ -3,13 +3,14 @@ const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
 const { getClinicalContext } = require("../services/clinicalContextService");
 const { isValidStayId } = require("../validators/idValidator");
+const { requireStayAccess } = require("../services/accessPolicy");
 
 // GET /api/clinical-context/:stay_id
 // Returns the aggregated clinical context for one ED stay:
 // stay, patient, diagnoses, medications, latest observation,
 // latest NEWS2 result, latest trend result.
 // Requires authentication, same as the other clinical stay routes.
-router.get("/:stay_id", authMiddleware, async (req, res) => {
+router.get("/:stay_id", authMiddleware, requireStayAccess(), async (req, res) => {
   try {
     const { stay_id } = req.params;
 

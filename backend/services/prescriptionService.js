@@ -1,6 +1,7 @@
 const pool = require("../db");
 const { getNormalizedMedications } = require("./medicationNormalizationService");
 const { findDrugInteractions } = require("./ddinterService");
+const { getColumns } = require("./schemaCapabilities");
 
 /**
  * Resolves a proposed medication using existing frozen mapping data.
@@ -452,28 +453,68 @@ async function reviewPrescription(
 /**
  * Retrieves prescriptions belonging to one ED stay.
  */
-async function getPrescriptions(stayId) {
+async function getPrescriptions(stayId, options = {}) {
+  const role = options.role || "DOCTOR";
+  const columns = await getColumns("prescriptions");
+
+  // A patient must never see prescriptions unless the database
+  // supports checking whether they have been authorized.
+  if (role === "PATIENT") {
+    if (!columns.has("status")) {
+      return [];
+    }
+
+    const patientColumns = [
+      "prescription_id",
+      "stay_id",
+      "medication_name",
+      "dosage",
+      "frequency",
+      "route",
+      "duration",
+      "prescribed_at",
+      "instructions",
+      "source",
+      "created_at",
+    ].filter((column) => columns.has(column));
+
+    const result = await pool.query(
+      `SELECT ${patientColumns.join(", ")}
+       FROM prescriptions
+       WHERE stay_id = $1
+         AND status = 'AUTHORIZED'
+       ORDER BY created_at DESC`,
+      [stayId]
+    );
+
+    return result.rows;
+  }
+
+  // DOCTOR / authorized staff: return available prescription fields.
+  const staffColumns = [
+    "prescription_id",
+    "patient_id",
+    "stay_id",
+    "medication_name",
+    "dosage",
+    "frequency",
+    "route",
+    "duration",
+    "prescribed_at",
+    "prescribed_by",
+    "instructions",
+    "status",
+    "screening_result",
+    "screened_at",
+    "reviewed_by",
+    "reviewed_at",
+    "review_notes",
+    "source",
+    "created_at",
+  ].filter((column) => columns.has(column));
+
   const result = await pool.query(
-    `SELECT
-       prescription_id,
-       patient_id,
-       stay_id,
-       medication_name,
-       dosage,
-       frequency,
-       route,
-       duration,
-       prescribed_at,
-       prescribed_by,
-       instructions,
-       status,
-       screening_result,
-       screened_at,
-       reviewed_by,
-       reviewed_at,
-       review_notes,
-       source,
-       created_at
+    `SELECT ${staffColumns.join(", ")}
      FROM prescriptions
      WHERE stay_id = $1
      ORDER BY created_at DESC`,

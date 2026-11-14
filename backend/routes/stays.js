@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require("../db");
 const authMiddleware = require("../middleware/authMiddleware");
 const { isValidStayId } = require("../validators/idValidator");
+const { requireStayAccess, stayListFilter } = require("../services/accessPolicy");
 
 // Returns true if an ED stay with this stay_id exists. Used by the
 // sub-routes below so a nonexistent stay returns 404 instead of an
@@ -15,15 +16,21 @@ async function stayExists(stay_id) {
   return result.rows.length > 0;
 }
 
+
 // Get first 20 ED stays
+// Get ED stays the logged-in user is allowed to see (first 20)
 router.get("/", authMiddleware, async (req, res) => {
   try {
+    const { clause, params } = await stayListFilter(req.user);
+
     const result = await pool.query(
-      `SELECT stay_id, subject_id, intime, outtime, gender, disposition,
-              chiefcomplaint, acuity
-       FROM ed_stays
-       ORDER BY intime
-       LIMIT 20`
+      `SELECT s.stay_id, s.subject_id, s.intime, s.outtime, s.gender,
+              s.disposition, s.chiefcomplaint, s.acuity
+       FROM ed_stays s
+       WHERE ${clause}
+       ORDER BY s.intime
+       LIMIT 20`,
+      params
     );
 
     res.json({
@@ -37,16 +44,9 @@ router.get("/", authMiddleware, async (req, res) => {
 });
 
 // Get one specific ED stay
-router.get("/:stay_id", authMiddleware, async (req, res) => {
+router.get("/:stay_id", authMiddleware,requireStayAccess(), async (req, res) => {
   try {
     const { stay_id } = req.params;
-
-    if (!isValidStayId(stay_id)) {
-      return res.status(400).json({
-        error: "stay_id must be a valid integer"
-      });
-    }
-
     const result = await pool.query(
       `SELECT stay_id, subject_id, intime, outtime, gender, disposition,
               chiefcomplaint, acuity
@@ -69,7 +69,7 @@ router.get("/:stay_id", authMiddleware, async (req, res) => {
 });
 
 // Get vital-sign observations for one specific ED stay
-router.get("/:stay_id/observations", authMiddleware, async (req, res) => {
+router.get("/:stay_id/observations", authMiddleware, requireStayAccess, async (req, res) => {
   try {
     const { stay_id } = req.params;
 
@@ -107,7 +107,7 @@ router.get("/:stay_id/observations", authMiddleware, async (req, res) => {
 });
 
 // Get NEWS2 scores for a specific ED stay
-router.get("/:stay_id/news2", authMiddleware, async (req, res) => {
+router.get("/:stay_id/news2", authMiddleware, requireStayAccess, async (req, res) => {
   try {
     const { stay_id } = req.params;
 
@@ -147,7 +147,7 @@ router.get("/:stay_id/news2", authMiddleware, async (req, res) => {
 });
 
 // Get temporal trend results for a specific ED stay
-router.get("/:stay_id/trends", authMiddleware, async (req, res) => {
+router.get("/:stay_id/trends", authMiddleware, requireStayAccess, async (req, res) => {
   try {
     const { stay_id } = req.params;
 
@@ -186,7 +186,7 @@ router.get("/:stay_id/trends", authMiddleware, async (req, res) => {
 });
 
 // Get diagnoses for a specific ED stay
-router.get("/:stay_id/diagnoses", authMiddleware, async (req, res) => {
+router.get("/:stay_id/diagnoses", authMiddleware, requireStayAccess, async (req, res) => {
   try {
     const { stay_id } = req.params;
 
