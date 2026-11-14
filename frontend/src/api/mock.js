@@ -1,22 +1,82 @@
 // Same function names as real.js, backed by sample data. Used when VITE_USE_MOCK=true.
 import { ApiError } from "./client.js";
-import { MOCK_USERS, STAYS, summaryFor, observationsFor } from "./mockData.js";
+import { MOCK_USERS, STAYS, summaryFor, observationsFor, addStay } from "./mockData.js";
 
 const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
-let prescriptions = []; // in memory only
-let nextPrescriptionId = 1;
+let prescriptions = [
+  { prescription_id: 900, stay_id: "30133058", medication_name: "Paracetamol", dosage: "500 mg", frequency: "every 6 hours", duration: "3 days", status: "AUTHORIZED", active: true },
+  { prescription_id: 901, stay_id: "30133058", medication_name: "Ibuprofen", dosage: "200 mg", frequency: "twice a day", duration: "5 days", status: "AUTHORIZED", active: false },
+]; // in memory only
+let nextPrescriptionId = 1000;
 const mockInvites = {};
 const mockFollowUps = {};
 const mockAssigned = {};
 const mockDischarge = {};
 const mockDoctors = [];
 
+// ---- Patient profiles (sample mode only; memory is cleared on a full reload) ----
+const mockAccounts = {
+  patient1: { user_id: 15, username: "patient1", full_name: "Anita Sharma", dob: "1990-05-14", phone: "9876500123", email: "anita@example.com", share: true, visits: ["30133058"], fails: 0,
+    allergies: [{ id: 1, name: "Penicillin", reaction: "Rash" }], medications: [{ id: 1, name: "Vitamin D", dose: "1000 IU daily" }], emergency_contact: { name: "Ravi Sharma", phone: "9876500999" },
+    conditions: [{ id: 1, name: "Asthma", note: "Since childhood" }] },
+};
+// Per visit: what the ER desk recorded about the patient and the access code on the slip.
+const visitMeta = {
+  "30094124": { patient_name: "Rohan Mehta", dob: "1961-02-03", phone: "9876504821", email: "", access_code: "HX4P-7QMD", owner: null },
+  "30112876": { patient_name: "Imran Khan", dob: "1985-11-20", phone: "9876507733", email: "", access_code: "T9WK-2RLC", owner: null },
+  "30097315": { patient_name: "Lata Joshi", dob: "1974-08-09", phone: "9876502290", email: "", access_code: "M3ZD-8VFB", owner: null },
+  "30120492": { patient_name: "Vikram Das", dob: "1992-01-30", phone: "9876505517", email: "", access_code: "C6NQ-4HTE", owner: null },
+  "30133058": { patient_name: "Anita Sharma", dob: "1990-05-14", phone: "9876500123", email: "anita@example.com", access_code: "R2JY-9XAK", owner: "patient1" },
+  "30141620": { patient_name: "Dev Patel", dob: "2001-06-25", phone: "9876503348", email: "", access_code: "W8SB-5GPN", owner: null },
+};
+// Past-visit extras so the history card has something to show in sample mode.
+const pastExtras = { "30133058": { allergies: ["Sulfa drugs"], medications: ["Cetirizine 10 mg daily"] } };
+mockAssigned["30133058"] = { user_id: 201, full_name: "Dr. Meera Nair", specialization: "Emergency Medicine" };
+mockDischarge["30133058"] = { discharge_id: 9, discharge_status: "DISCHARGED", discharge_diagnosis: "Mild ankle sprain", discharge_instructions: "Rest, ice and elevate. Return if the pain gets worse.", discharge_time: "2147-11-12T16:20:00.000Z", departed_at: "2147-11-12T16:40:00.000Z", prescribed_followup: true };
+mockFollowUps["30133058"] = [{ follow_up_id: 1, follow_up_date: "2147-11-26T10:00:00.000Z", follow_up_type: "Wound check", department: "Orthopaedics", status: null }];
+let currentPatient = null;
+let nextStay = 30150001;
+const norm = (v) => String(v || "").replace(/[\s-]/g, "").toUpperCase();
+const last4 = (v) => String(v || "").replace(/\D/g, "").slice(-4);
+function link(stayId, acct) {
+  visitMeta[stayId].owner = acct.username;
+  if (!acct.visits.includes(String(stayId))) acct.visits.push(String(stayId));
+}
+// A profile is linked automatically when the date of birth and the phone or email match exactly one account.
+function tryLink(stayId) {
+  const m = visitMeta[stayId];
+  if (!m || m.owner || !m.dob) return null;
+  const hits = Object.values(mockAccounts).filter((a) =>
+    a.dob === m.dob && ((m.phone && last4(a.phone) === last4(m.phone) && norm(a.phone) === norm(m.phone)) || (m.email && a.email && a.email.toLowerCase() === m.email.toLowerCase())));
+  if (hits.length !== 1) return null;
+  link(stayId, hits[0]);
+  return hits[0].full_name;
+}
+const visitCard = (id) => {
+  const row = STAYS.find((s) => s.stay_id === id);
+  const d = mockDischarge[id];
+  return {
+    stay_id: id,
+    arrived: row?.intime,
+    chiefcomplaint: row?.chiefcomplaint,
+    status: d ? (d.departed_at ? "Left" : "Discharged") : "In the ER",
+    doctor: mockAssigned[id] ? { full_name: mockAssigned[id].full_name, specialization: mockAssigned[id].specialization } : null,
+    diagnosis: d?.discharge_diagnosis || null,
+    instructions: d?.discharge_instructions || null,
+    prescriptions: prescriptions.filter((p) => p.stay_id === id && p.status === "AUTHORIZED"),
+    follow_ups: mockFollowUps[id] || [],
+  };
+};
+
 export const mock = {
   login: async (username, password) => {
     await wait();
-    const user = MOCK_USERS[username];
+    const acct = mockAccounts[username];
+    if (acct && acct.password && acct.password !== password) throw new ApiError(401, "Invalid username or password");
+    const user = acct ? { user_id: acct.user_id, username, role: "PATIENT" } : MOCK_USERS[username];
     if (!user || !password) throw new ApiError(401, "Invalid username or password");
+    currentPatient = user.role === "PATIENT" ? acct : null;
     return { message: "Login successful", token: `mock-token-${user.role}`, user };
   },
 
@@ -183,6 +243,150 @@ export const mock = {
   listPendingReviews: async () => {
     await wait(200);
     return prescriptions.filter((p) => p.status === "PENDING_REVIEW");
+  },
+  // ---- Patient profile ----
+  registerPatient: async (b) => {
+    await wait(500);
+    if (!(b.full_name || "").trim()) throw new ApiError(400, "Enter your full name.");
+    if (!b.dob || Number.isNaN(Date.parse(b.dob)) || new Date(b.dob) > new Date()) throw new ApiError(400, "Enter a valid date of birth.");
+    if (String(b.phone || "").replace(/\D/g, "").length < 7) throw new ApiError(400, "Enter a valid phone number.");
+    if (b.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email)) throw new ApiError(400, "Enter a valid email address.");
+    if (typeof b.password !== "string" || b.password.length < 12 || b.password.length > 128) throw new ApiError(400, "Password must contain 12 to 128 characters");
+    const username = (b.email || b.phone).trim();
+    if (mockAccounts[username] || MOCK_USERS[username]) throw new ApiError(409, "An account with this email or phone already exists.");
+    const acct = { user_id: 300 + Object.keys(mockAccounts).length, username, full_name: b.full_name.trim(), dob: b.dob, phone: b.phone.trim(), email: (b.email || "").trim(), password: b.password, share: b.share !== false, visits: [], fails: 0, allergies: [], medications: [], conditions: [], emergency_contact: null };
+    mockAccounts[username] = acct;
+    Object.keys(visitMeta).forEach(tryLink);
+    return { message: "Profile created", username };
+  },
+  listMyVisits: async () => {
+    await wait(250);
+    if (!currentPatient) throw new ApiError(401, "Please sign in again.");
+    const a = currentPatient;
+    return { profile: { full_name: a.full_name, dob: a.dob, phone: a.phone, email: a.email, share: a.share, emergency_contact: a.emergency_contact }, visits: [...a.visits].reverse().map(visitCard) };
+  },
+  claimVisit: async ({ stay_id, access_code, phone_last4 }) => {
+    await wait(450);
+    if (!currentPatient) throw new ApiError(401, "Please sign in again.");
+    const a = currentPatient;
+    if (a.fails >= 5) throw new ApiError(429, "Too many tries. Please wait a few minutes, or ask the ER desk for help.");
+    const m = visitMeta[String(stay_id).trim()];
+    const ok = m && norm(m.access_code) === norm(access_code) && last4(m.phone) === String(phone_last4).trim() && (!m.owner || m.owner === a.username);
+    if (!ok) { a.fails += 1; throw new ApiError(400, "These details don't match. Check the slip from the ER desk and try again."); }
+    a.fails = 0;
+    link(String(stay_id).trim(), a);
+    return { message: "Visit added to your profile" };
+  },
+  listMyHealth: async () => {
+    await wait(150);
+    if (!currentPatient) throw new ApiError(401, "Please sign in again.");
+    const a = currentPatient;
+    return { allergies: [...a.allergies], medications: [...a.medications], conditions: [...a.conditions] };
+  },
+  addMyHealthItem: async (kind, body) => {
+    await wait(250);
+    if (!currentPatient) throw new ApiError(401, "Please sign in again.");
+    if (!["allergies", "medications", "conditions"].includes(kind)) throw new ApiError(400, "Unknown list");
+    if (!(body.name || "").trim()) throw new ApiError(400, kind === "allergies" ? "Enter what you are allergic to." : kind === "conditions" ? "Enter the condition." : "Enter the medicine name.");
+    const list = currentPatient[kind];
+    const item = { id: Math.max(0, ...list.map((x) => x.id)) + 1, name: body.name.trim(), [kind === "allergies" ? "reaction" : kind === "conditions" ? "note" : "dose"]: (body.extra || "").trim() };
+    list.push(item);
+    return item;
+  },
+  removeMyHealthItem: async (kind, id) => {
+    await wait(200);
+    if (!currentPatient) throw new ApiError(401, "Please sign in again.");
+    currentPatient[kind] = currentPatient[kind].filter((x) => x.id !== id);
+    return { message: "Removed" };
+  },
+  updateMyProfile: async (b) => {
+    await wait(400);
+    if (!currentPatient) throw new ApiError(401, "Please sign in again.");
+    if (!(b.full_name || "").trim()) throw new ApiError(400, "Enter your full name.");
+    if (String(b.phone || "").replace(/\D/g, "").length < 7) throw new ApiError(400, "Enter a valid phone number.");
+    if (b.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email)) throw new ApiError(400, "Enter a valid email address.");
+    const ec = b.emergency_contact;
+    if (ec && (ec.name || ec.phone) && (!ec.name?.trim() || String(ec.phone || "").replace(/\D/g, "").length < 7)) throw new ApiError(400, "Enter both a name and a phone number for the emergency contact, or leave both empty.");
+    Object.assign(currentPatient, { full_name: b.full_name.trim(), phone: b.phone.trim(), email: (b.email || "").trim(), share: b.share !== false, emergency_contact: ec && ec.name ? { name: ec.name.trim(), phone: ec.phone.trim() } : null });
+    return { message: "Profile saved" };
+  },
+  changeMyPassword: async ({ current_password, new_password }) => {
+    await wait(450);
+    if (!currentPatient) throw new ApiError(401, "Please sign in again.");
+    if (currentPatient.password && currentPatient.password !== current_password) throw new ApiError(400, "Your current password is not correct.");
+    if (typeof new_password !== "string" || new_password.length < 12 || new_password.length > 128) throw new ApiError(400, "Password must contain 12 to 128 characters");
+    currentPatient.password = new_password;
+    return { message: "Password changed" };
+  },
+  // ---- ER desk ----
+  registerVisit: async (caseId, b) => {
+    await wait(600);
+    const c = find(caseId);
+    if (c.stay_id) throw new ApiError(409, "This ambulance case is already linked to an ER visit");
+    if (!(b.patient_name || "").trim()) throw new ApiError(400, "Enter the patient's name.");
+    if (!(b.chief_complaint || "").trim()) throw new ApiError(400, "Enter the reason for the visit.");
+    if (b.dob && (Number.isNaN(Date.parse(b.dob)) || new Date(b.dob) > new Date())) throw new ApiError(400, "Enter a valid date of birth.");
+    const n2 = score(c.vital);
+    const v = c.vital || {};
+    const now = new Date();
+    const id = String(nextStay++);
+    const code = Array.from({ length: 8 }, () => "ABCDEFGHJKMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 31)]).join("");
+    addStay({
+      stay_id: id, subject_id: String(10040000 + nextStay), case_code: c.temporary_case_code, case_status: "ARRIVED_ER", gender: "U",
+      chiefcomplaint: b.chief_complaint.trim(), acuity: 3, score: n2.complete ? n2.total_news2_score : 0, risk: n2.complete ? n2.risk_level : "Low Risk",
+      rr: v.respiratory_rate ?? 16, spo2: v.spo2 ?? 97, sbp: v.systolic_bp ?? 120, hr: v.heart_rate ?? 80, temp: v.temperature ?? 36.8,
+      s: [0, 0, 0, 0, 0], ago: 0, time: `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}`,
+    });
+    visitMeta[id] = { patient_name: b.patient_name.trim(), dob: b.dob || "", phone: (b.phone || "").trim(), email: (b.email || "").trim(), access_code: `${code.slice(0, 4)}-${code.slice(4)}`, owner: null };
+    c.stay_id = Number(id);
+    c.status = "ARRIVED_ER";
+    if (c.transport && c.transport.transport_status !== "HANDOVER_COMPLETE") c.transport.transport_status = "ARRIVED_AT_DESTINATION";
+    if (b.doctor_user_id) await mock.assignDoctor(id, b.doctor_user_id);
+    const linked = tryLink(id);
+    return { stay_id: id, access_code: visitMeta[id].access_code, linked_profile: linked, phone_missing: !visitMeta[id].phone };
+  },
+  newAccessCode: async (stayId) => {
+    await wait(300);
+    const m = visitMeta[String(stayId)];
+    if (!m) throw new ApiError(404, "ED stay not found");
+    const code = Array.from({ length: 8 }, () => "ABCDEFGHJKMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 31)]).join("");
+    m.access_code = `${code.slice(0, 4)}-${code.slice(4)}`;
+    return { access_code: m.access_code };
+  },
+  getPatientDetails: async (stayId) => {
+    await wait(150);
+    const m = visitMeta[String(stayId)];
+    if (!m) return { patient_name: "", dob: "", phone: "", email: "", access_code: null, linked_profile: null };
+    return { patient_name: m.patient_name, dob: m.dob, phone: m.phone, email: m.email, access_code: m.access_code, linked_profile: m.owner ? mockAccounts[m.owner]?.full_name : null };
+  },
+  updatePatientDetails: async (stayId, b) => {
+    await wait(350);
+    const m = visitMeta[String(stayId)];
+    if (!m) throw new ApiError(404, "ED stay not found");
+    if (b.dob && (Number.isNaN(Date.parse(b.dob)) || new Date(b.dob) > new Date())) throw new ApiError(400, "Enter a valid date of birth.");
+    Object.assign(m, { patient_name: (b.patient_name ?? m.patient_name).trim(), dob: b.dob ?? m.dob, phone: (b.phone ?? m.phone).trim(), email: (b.email ?? m.email).trim() });
+    const linked = tryLink(String(stayId));
+    return { message: "Patient details saved", linked_profile: linked || (m.owner ? mockAccounts[m.owner]?.full_name : null) };
+  },
+  getPatientHistory: async (stayId) => {
+    await wait(200);
+    const m = visitMeta[String(stayId)];
+    if (!m?.owner) return { linked: false };
+    const a = mockAccounts[m.owner];
+    if (!a.share) return { linked: true, shared: false, name: a.full_name };
+    const prev = a.visits.filter((v) => v !== String(stayId)).map(visitCard);
+    const extras = a.visits.filter((v) => v !== String(stayId)).map((v) => pastExtras[v]).filter(Boolean);
+    return {
+      linked: true, shared: true, name: a.full_name,
+      visits: prev,
+      allergies: [...new Set(extras.flatMap((e) => e.allergies))],
+      medications: [...new Set(extras.flatMap((e) => e.medications))],
+      reported_allergies: a.allergies.map((x) => `${x.name}${x.reaction ? ` (${x.reaction})` : ""}`),
+      reported_conditions: a.conditions.map((x) => `${x.name}${x.note ? ` (${x.note})` : ""}`),
+      reported_medications: a.medications.map((x) => `${x.name}${x.dose ? ` ${x.dose}` : ""}`),
+      emergency_contact: a.emergency_contact,
+      prescriptions: prev.flatMap((v) => v.prescriptions),
+    };
   },
   validateInvitation: async (token) => {
     await wait(300);

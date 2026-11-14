@@ -12,7 +12,12 @@ import StayDetail from "./pages/StayDetail";
 import Prescription from "./pages/Prescription";
 import ParamedicHome from "./pages/ParamedicHome";
 import ParamedicCase from "./pages/ParamedicCase";
-import ComingSoon from "./pages/ComingSoon";
+import PatientHome from "./pages/PatientHome";
+import AddVisit from "./pages/AddVisit";
+import Signup from "./pages/Signup";
+import PatientMedicines from "./pages/PatientMedicines";
+import PatientHealth from "./pages/PatientHealth";
+import PatientProfile from "./pages/PatientProfile";
 import ParamedicNew from "./pages/ParamedicNew";
 import AdminDoctors from "./pages/AdminDoctors";
 import AcceptInvitation from "./pages/AcceptInvitation";
@@ -27,6 +32,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Root />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
       <Route path="/accept-invitation" element={<AcceptInvitation />} />
       <Route element={<RequireRole />}>
         <Route element={<AppShell />}>
@@ -52,7 +58,11 @@ export default function App() {
             <Route path="/admin" element={<AdminDoctors />} />
           </Route>
           <Route element={<RequireRole roles={["PATIENT"]} />}>
-            <Route path="/patient" element={<ComingSoon title="My visit" note="The backend has no patient endpoint yet." />} />
+            <Route path="/patient" element={<PatientHome />} />
+            <Route path="/patient/add" element={<AddVisit />} />
+            <Route path="/patient/medicines" element={<PatientMedicines />} />
+            <Route path="/patient/health" element={<PatientHealth />} />
+            <Route path="/patient/profile" element={<PatientProfile />} />
           </Route>
         </Route>
       </Route>

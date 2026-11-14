@@ -67,6 +67,20 @@ export const real = {
   // No endpoint lists these across visits yet; the panels explain that instead of guessing.
   listFollowUps: async () => { throw new ApiError(501, "The server cannot list follow-ups across visits yet."); },
   listPendingReviews: async () => { throw new ApiError(501, "The server cannot list medicines waiting for review yet."); },
+  // Patient profile and the ER desk's registration: the server has none of these yet, so each says so plainly.
+  registerPatient: async () => { throw new ApiError(501, "The server cannot create patient profiles yet."); },
+  listMyVisits: async () => { throw new ApiError(501, "The server cannot show patient visits yet."); },
+  claimVisit: async () => { throw new ApiError(501, "The server cannot add visits to a profile yet."); },
+  registerVisit: async () => { throw new ApiError(501, "The server cannot register new ER visits yet. Use \"Link to an existing visit\" below."); },
+  listMyHealth: async () => { throw new ApiError(501, "The server cannot store your allergies and medicines yet."); },
+  addMyHealthItem: async () => { throw new ApiError(501, "The server cannot store your allergies and medicines yet."); },
+  removeMyHealthItem: async () => { throw new ApiError(501, "The server cannot store your allergies and medicines yet."); },
+  updateMyProfile: async () => { throw new ApiError(501, "The server cannot save profile changes yet."); },
+  changeMyPassword: async () => { throw new ApiError(501, "The server cannot change passwords for patients yet."); },
+  newAccessCode: async () => { throw new ApiError(501, "The server cannot make access codes yet."); },
+  getPatientDetails: async () => { throw new ApiError(501, "The server does not store patient details yet."); },
+  updatePatientDetails: async () => { throw new ApiError(501, "The server does not store patient details yet."); },
+  getPatientHistory: async () => { throw new ApiError(501, "The server has no patient history yet."); },
   // Public (no sign-in): the doctor opens the emailed link.
   validateInvitation: (token) => request("/doctors/validate-invitation", { method: "POST", body: { token } }),
   acceptInvitation: (token, password) => request("/doctors/accept-invitation", { method: "POST", body: { token, password } }),

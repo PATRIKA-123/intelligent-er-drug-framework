@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router";
+import { Link, Navigate, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { homeFor } from "../auth/roles";
 import { USE_MOCK } from "../api";
@@ -11,6 +11,7 @@ const SHORTCUTS = [
   { label: "ER staff", username: "nurse1" },
   { label: "Doctor", username: "doctor1" },
   { label: "Admin", username: "admin1" },
+  { label: "Patient", username: "patient1" },
 ];
 
 export default function Login() {
@@ -123,9 +124,8 @@ export default function Login() {
           </div>
         )}
       </form>
-      <p className="m-0 rounded-full border border-white/15 bg-white/5 px-5 py-2 text-center text-xs text-[#C9CED8]">
-        {USE_MOCK ? "Sample data only. Nothing here is a real patient." : "Authorized staff only."}
-      </p>
+      <Link to="/signup" className="rounded-full border border-white/25 bg-white/10 px-5 py-2.5 text-sm font-medium text-white">New patient? Create a profile</Link>
+      {USE_MOCK && <p className="m-0 rounded-full border border-white/15 bg-white/5 px-5 py-2 text-center text-xs text-[#C9CED8]">Sample data only</p>}
     </div>
   );
 }

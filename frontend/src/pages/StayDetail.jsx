@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useRegisterVisitNav } from "../components/CaseNav";
+import PatientDetails from "../components/PatientDetails";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import Icon from "../components/Icon";
@@ -190,6 +191,7 @@ export default function StayDetail() {
             <VitalsChart observations={state.obs} />
             <p className="m-0 mt-1.5 text-xs text-muted">Left scale is heart rate in bpm; SpO2 is drawn on its own 88 to 100 scale.</p>
           </section>
+          {isStaff && <PatientDetails stayId={stayId} />}
         </div>
 
         <div className="flex flex-col gap-4">

@@ -6,6 +6,7 @@ export const MOCK_USERS = {
   nurse1: { user_id: 12, username: "nurse1", role: "ER_STAFF" },
   doctor1: { user_id: 13, username: "doctor1", role: "DOCTOR" },
   admin1: { user_id: 14, username: "admin1", role: "ADMIN" },
+  patient1: { user_id: 15, username: "patient1", role: "PATIENT" },
 };
 
 const T = (hhmm) => `2147-11-14T${hhmm}:00.000Z`;
@@ -50,6 +51,12 @@ export function stayRow(b) {
 }
 
 export const STAYS = base.map(stayRow);
+
+// Sample mode only: a visit registered at the ER desk.
+export function addStay(b) {
+  base.push(b);
+  STAYS.unshift(stayRow(b));
+}
 
 export function summaryFor(stayId) {
   const b = base.find((x) => x.stay_id === stayId);

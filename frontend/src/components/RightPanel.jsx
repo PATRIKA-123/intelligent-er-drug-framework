@@ -127,6 +127,45 @@ function VisitCard({ visit }) {
   );
 }
 
+function HistoryCard({ stayId }) {
+  const st = useLoad(() => api.getPatientHistory(stayId), [stayId]);
+  const h = st.data;
+  if (st.loading || st.error || !h) return null;
+  if (!h.linked) return <Card title="Patient history"><Note>No patient profile is linked to this visit.</Note></Card>;
+  if (!h.shared) return <Card title="Patient history"><Note>{h.name} chose not to share earlier visits.</Note></Card>;
+  const chips = (list) => list.length ? <div className="flex flex-wrap gap-1.5">{list.map((x) => <span key={x} className="rounded-full bg-soft px-3 py-1 text-xs font-medium">{x}</span>)}</div> : <span className="text-sm text-muted">None recorded</span>;
+  return (
+    <Card title="Patient history">
+      <dl className="m-0 flex flex-col gap-3">
+        <div className="flex flex-col gap-1"><dt className="text-xs font-semibold text-muted">Allergies (earlier visits)</dt><dd className="m-0">{chips(h.allergies)}</dd></div>
+        {h.reported_allergies?.length > 0 && <div className="flex flex-col gap-1"><dt className="text-xs font-semibold text-muted">Allergies reported by the patient</dt><dd className="m-0">{chips(h.reported_allergies)}</dd></div>}
+        {h.reported_conditions?.length > 0 && <div className="flex flex-col gap-1"><dt className="text-xs font-semibold text-muted">Conditions reported by the patient</dt><dd className="m-0">{chips(h.reported_conditions)}</dd></div>}
+        {h.reported_medications?.length > 0 && <div className="flex flex-col gap-1"><dt className="text-xs font-semibold text-muted">Medicines reported by the patient</dt><dd className="m-0">{chips(h.reported_medications)}</dd></div>}
+        {h.emergency_contact && <div className="flex flex-col gap-1"><dt className="text-xs font-semibold text-muted">Emergency contact</dt><dd className="m-0 text-sm font-medium">{h.emergency_contact.name}, {h.emergency_contact.phone}</dd></div>}
+        <div className="flex flex-col gap-1"><dt className="text-xs font-semibold text-muted">Medicines (earlier visits)</dt><dd className="m-0">{chips(h.medications)}</dd></div>
+        <div className="flex flex-col gap-1"><dt className="text-xs font-semibold text-muted">Earlier prescriptions</dt><dd className="m-0">{chips(h.prescriptions.map((p) => `${p.medication_name}${p.dosage ? ` ${p.dosage}` : ""}`))}</dd></div>
+        <div className="flex flex-col gap-1.5">
+          <dt className="text-xs font-semibold text-muted">Earlier visits</dt>
+          <dd className="m-0">
+            {h.visits.length === 0 ? <span className="text-sm text-muted">None</span> : (
+              <ul className="m-0 flex list-none flex-col gap-2 p-0">
+                {h.visits.map((v) => (
+                  <li key={v.stay_id}>
+                    <Link to={`/stays/${v.stay_id}`} className="flex flex-col gap-0.5 rounded-2xl bg-soft px-3.5 py-3 hover:bg-page">
+                      <span className="text-sm font-semibold">{v.diagnosis || v.chiefcomplaint}</span>
+                      <span className="text-xs text-muted">{formatDateTime(v.arrived)} · Visit {v.stay_id}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </dd>
+        </div>
+      </dl>
+    </Card>
+  );
+}
+
 function FollowUpsCard() {
   const st = useLoad(() => api.listFollowUps(), []);
   const rows = (st.data || []).filter((f) => !f.status || !/DONE|COMPLETE|CANCEL/i.test(f.status)).slice(0, 6);
@@ -191,6 +230,33 @@ function StaffCard() {
   );
 }
 
+function PatientPanel() {
+  const st = useLoad(() => api.listMyVisits(), []);
+  const d = st.data;
+  const meds = d ? d.visits.reduce((n, v) => n + v.prescriptions.length, 0) : 0;
+  return (
+    <>
+      {d && (
+        <Card title="My profile">
+          <dl className="m-0 flex flex-col gap-2.5">
+            <Row k="Date of birth" v={d.profile.dob} />
+            <Row k="Phone" v={d.profile.phone} />
+            <Row k="Email" v={d.profile.email} />
+          </dl>
+          <p className="mb-0 mt-3 text-sm text-muted">{d.visits.length} visit{d.visits.length === 1 ? "" : "s"} · {meds} active medicine{meds === 1 ? "" : "s"}</p>
+        </Card>
+      )}
+      <Card title="Adding a visit">
+        <ol className="m-0 flex list-decimal flex-col gap-1.5 pl-5 text-sm">
+          <li>Take the slip from the ER desk</li>
+          <li>Enter the visit ID and access code</li>
+          <li>Enter the last 4 digits of your phone</li>
+        </ol>
+      </Card>
+    </>
+  );
+}
+
 function ParamedicPanel() {
   const [state, setState] = useState({ loading: true, error: null, cases: [] });
   useEffect(() => {
@@ -249,10 +315,10 @@ export default function RightPanel() {
   const nav = useCaseNav();
   const visit = useVisitNav();
   const { pathname } = useLocation();
-  if (user.role === "PATIENT") return null;
   let body;
-  if (nav?.c || user.role === "PARAMEDIC") body = <ParamedicPanel />;
-  else if (visit) body = <><VisitCard visit={visit} /><StaffPanel /></>;
+  if (user.role === "PATIENT") body = <PatientPanel />;
+  else if (nav?.c || user.role === "PARAMEDIC") body = <ParamedicPanel />;
+  else if (visit) body = <><VisitCard visit={visit} /><HistoryCard stayId={visit.stayId} /><StaffPanel /></>;
   else if (pathname === "/follow-ups") body = <><FollowUpsCard /><StaffPanel /></>;
   else if (pathname === "/admin") body = <><StaffCard /><StaffPanel /></>;
   else if (user.role === "DOCTOR") body = <><ReviewCard /><StaffPanel /></>;

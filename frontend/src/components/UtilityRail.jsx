@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, NavLink } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_CONFIG } from "../auth/roles";
 import { useStays } from "../lib/useStays";
@@ -98,6 +98,17 @@ export default function UtilityRail() {
           </div>
         )}
 
+        {user.role === "PATIENT" && (
+          <div role="group" aria-label="Pages" className="flex flex-none flex-col items-center gap-2 rounded-full bg-surface p-2">
+            {[...cfg.items, { ...cfg.action }].map((it) => (
+              <NavLink key={it.to} to={it.to} end aria-label={it.label} title={it.label}
+                className={({ isActive }) => `flex h-11 w-11 items-center justify-center rounded-full ${isActive ? "bg-ink" : "bg-soft hover:bg-mint"}`}>
+                {({ isActive }) => <Icon name={it.icon} size={20} color={isActive ? "#FFFFFF" : undefined} />}
+              </NavLink>
+            ))}
+          </div>
+        )}
+
         {!c && !visit && (user.role === "ER_STAFF" || user.role === "ADMIN") && (
           <div role="group" aria-label="Quick links" className="flex flex-none flex-col items-center gap-2 rounded-full bg-surface p-2">
             <Link to="/incoming" aria-label="Incoming ambulance cases" title="Incoming ambulance cases" className="flex h-11 w-11 items-center justify-center rounded-full bg-soft hover:bg-mint">
@@ -109,6 +120,7 @@ export default function UtilityRail() {
           </div>
         )}
 
+        {user.role !== "PATIENT" && (
         <div role="group" aria-label="Tools" className="flex flex-none flex-col items-center gap-1 rounded-full border border-[#C9CED8] p-2">
           <button type="button" className={BTN} aria-label="Search by visit ID" title="Search by visit ID"
             onClick={() => document.getElementById("stay-jump")?.focus()}>
@@ -120,6 +132,7 @@ export default function UtilityRail() {
             <Icon name="help" size={21} />
           </button>
         </div>
+        )}
 
         <div className="mt-auto flex flex-none flex-col items-center gap-3">
           {c && (

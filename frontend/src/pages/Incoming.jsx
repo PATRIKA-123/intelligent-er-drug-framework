@@ -6,6 +6,7 @@ import { invalidateStays } from "../lib/staysCache";
 import Button from "../components/Button";
 import RiskBadge from "../components/RiskBadge";
 import StatusChip from "../components/StatusChip";
+import { RegisterVisit, Slip } from "../components/RegisterVisit";
 import { fmtNum } from "../lib/format";
 
 export default function Incoming() {
@@ -16,10 +17,11 @@ export default function Incoming() {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [slip, setSlip] = useState(null);
 
   async function find(e) {
     e.preventDefault();
-    setMsg(null); setC(null); setConfirm(false);
+    setMsg(null); setC(null); setConfirm(false); setSlip(null);
     const id = caseId.trim();
     if (!/^\d+$/.test(id)) return setMsg({ error: "Enter the ambulance case ID the paramedic gave you." });
     setBusy(true);
@@ -53,7 +55,7 @@ export default function Incoming() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="m-0 text-[40px] font-semibold leading-none tracking-tight md:text-5xl">Incoming</h1>
-        <p className="mt-2.5 text-[15px] text-muted">Match the ambulance case to the patient's ER visit.</p>
+        <p className="mt-2.5 text-[15px] text-muted">Find the ambulance case, then register the patient's ER visit.</p>
       </div>
 
       <form onSubmit={find} className="panel flex flex-wrap items-end gap-3 p-7!">
@@ -82,8 +84,17 @@ export default function Incoming() {
             <p className="m-0 text-sm text-muted">Transport: {c.transport?.transport_status?.replaceAll("_", " ").toLowerCase() || "not saved"}</p>
           </section>
 
+          <div className="flex flex-col gap-4">
+          {slip && <Slip slip={slip} />}
+          {!slip && !c.stay_id && (
+            <RegisterVisit
+              c={c}
+              onDone={async (r) => { setSlip(r); invalidateStays(); setC(await api.getCase(c.case_id)); }}
+            />
+          )}
+          {!slip && (
           <section className="panel flex flex-col gap-4 p-7!">
-            <h2 className="m-0 text-[22px] font-semibold tracking-tight">Link to ER visit</h2>
+            <h2 className="m-0 text-[22px] font-semibold tracking-tight">{c.stay_id ? "ER visit" : "Or link to an existing visit"}</h2>
             {c.stay_id ? (
               <p className="m-0 text-sm">Already linked to <Link to={`/stays/${c.stay_id}`} className="font-semibold underline">ER visit {c.stay_id}</Link>. This can't be changed here.</p>
             ) : (
@@ -105,6 +116,8 @@ export default function Incoming() {
             {msg?.error && <p role="alert" className="m-0 text-sm font-medium text-risk-high-bg">{msg.error}</p>}
             {msg?.ok && <p role="status" className="m-0 text-sm font-semibold text-risk-low-fg">{msg.ok}</p>}
           </section>
+          )}
+          </div>
         </div>
       )}
     </div>

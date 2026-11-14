@@ -46,6 +46,7 @@ export default function AppShell() {
             <NavLink key={it.to} to={it.to} end className={pillLink}>{it.label}</NavLink>
           ))}
         </nav>
+        {user.role !== "PATIENT" && (
         <form onSubmit={jump} className="flex h-12 min-w-[260px] flex-[0_1_340px] items-center gap-2.5 rounded-full bg-surface px-[18px]">
           <Icon name="search" size={18} color="#5B6472" strokeWidth={2} />
           <input
@@ -59,6 +60,7 @@ export default function AppShell() {
           />
           <span className="rounded-lg border border-line px-1.5 py-0.5 text-xs text-muted">Enter</span>
         </form>
+        )}
         <div className="relative lg:hidden">
           <button
             type="button"

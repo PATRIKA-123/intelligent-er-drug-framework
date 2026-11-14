@@ -36,7 +36,13 @@ export const ROLE_CONFIG = {
   PATIENT: {
     label: "Patient",
     home: "/patient",
-    items: [{ label: "Home", to: "/patient", icon: "home" }],
+    items: [
+      { label: "Visits", to: "/patient", icon: "home" },
+      { label: "Medicines", to: "/patient/medicines", icon: "pill" },
+      { label: "Health", to: "/patient/health", icon: "alert" },
+      { label: "Profile", to: "/patient/profile", icon: "user" },
+    ],
+    action: { label: "Add a visit", to: "/patient/add", icon: "plus" },
   },
 };
 
