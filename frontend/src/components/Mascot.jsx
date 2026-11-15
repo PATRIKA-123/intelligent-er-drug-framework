@@ -1,8 +1,8 @@
 // Our own friendly heart with a pulse line. Used only on login, empty states and
 // success messages, never next to clinical data.
-export default function Mascot({ size = 96, label = "Friendly heart mascot", outline = false }) {
+export default function Mascot({ size = 96, label = "", outline = false }) {
   return (
-    <svg viewBox="0 0 120 124" width={size} height={(size * 124) / 120} role="img" aria-label={label}>
+    <svg viewBox="0 0 120 124" width={size} height={(size * 124) / 120} role={label ? "img" : undefined} aria-label={label || undefined} aria-hidden={label ? undefined : true}>
       <path
         d="M60 100 C 20 70, 6 48, 6 32 C 6 16, 19 6, 33 6 C 44 6, 54 12, 60 22 C 66 12, 76 6, 87 6 C 101 6, 114 16, 114 32 C 114 48, 100 70, 60 100 Z"
         fill="#D3EAE3"

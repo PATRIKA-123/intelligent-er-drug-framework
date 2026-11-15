@@ -42,11 +42,11 @@ export default function SelfList({ kind, items, setItems, nameLabel, extraLabel,
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <label htmlFor={`sl-${kind}-n`} className="text-[13px] font-semibold">{nameLabel}</label>
-            <input id={`sl-${kind}-n`} className="field" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" />
+            <input id={`sl-${kind}-n`} className="field" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" maxLength={150} />
           </div>
           <div className="flex flex-col gap-1.5">
             <label htmlFor={`sl-${kind}-e`} className="text-[13px] font-semibold">{extraLabel} (optional)</label>
-            <input id={`sl-${kind}-e`} className="field" value={extra} onChange={(e) => setExtra(e.target.value)} autoComplete="off" />
+            <input id={`sl-${kind}-e`} className="field" value={extra} onChange={(e) => setExtra(e.target.value)} autoComplete="off" maxLength={200} />
           </div>
         </div>
         {err && <p role="alert" className="m-0 text-sm font-medium text-risk-high-bg">{err}</p>}

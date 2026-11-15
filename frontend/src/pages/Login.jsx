@@ -49,7 +49,7 @@ export default function Login() {
   }
 
   return (
-    <div
+    <main
       className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 py-12 text-white"
       style={{
         background:
@@ -126,6 +126,6 @@ export default function Login() {
       </form>
       <Link to="/signup" className="rounded-full border border-white/25 bg-white/10 px-5 py-2.5 text-sm font-medium text-white">New patient? Create a profile</Link>
       {USE_MOCK && <p className="m-0 rounded-full border border-white/15 bg-white/5 px-5 py-2 text-center text-xs text-[#C9CED8]">Sample data only</p>}
-    </div>
+    </main>
   );
 }

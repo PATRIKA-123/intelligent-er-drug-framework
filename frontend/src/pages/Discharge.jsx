@@ -126,7 +126,7 @@ export default function Discharge() {
               <legend className="mb-1.5 text-[13px] font-semibold">What happens to the patient?</legend>
               {OUTCOMES.map((o) => (
                 <label key={o.key} className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-2xl px-4 py-2.5 text-[15px] ${outcome === o.key ? "bg-lavender font-semibold" : "bg-soft"}`}>
-                  <input type="radio" name="outcome" value={o.key} checked={outcome === o.key} onChange={() => setOutcome(o.key)} className="h-5 w-5 accent-ink" />
+                  <input type="radio" name="outcome" value={o.key} checked={outcome === o.key} onChange={() => setOutcome(o.key)} className="h-6 w-6 accent-ink" />
                   {o.label}
                 </label>
               ))}
@@ -140,7 +140,7 @@ export default function Discharge() {
               <textarea id="instr" rows={4} className="field h-auto py-3" value={instr} onChange={(e) => setInstr(e.target.value)} />
             </div>
             <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm">
-              <input type="checkbox" checked={wantsFollow} onChange={(e) => setFollow(e.target.checked)} className="h-5 w-5 accent-ink" />
+              <input type="checkbox" checked={wantsFollow} onChange={(e) => setFollow(e.target.checked)} className="h-6 w-6 accent-ink" />
               A follow-up visit is recommended
             </label>
             <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-risk-lowmed-bg px-4 py-3.5 text-sm leading-snug text-[#3F2700]">

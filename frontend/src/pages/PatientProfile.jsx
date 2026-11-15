@@ -65,16 +65,16 @@ export default function PatientProfile() {
       <h1 className="m-0 text-[40px] font-semibold leading-none tracking-tight">Profile</h1>
       <form onSubmit={save} noValidate className="panel flex flex-col gap-4 p-7!">
         <h2 className="m-0 text-xl font-semibold tracking-tight">Your details</h2>
-        <F id="pp-name" label="Full name" value={f.full_name} onChange={set("full_name")} />
+        <F id="pp-name" label="Full name" maxLength={150} value={f.full_name} onChange={set("full_name")} />
         <div className="grid gap-3.5 sm:grid-cols-2">
           <F id="pp-dob" label="Date of birth" value={f.dob} disabled hint="Ask the ER desk if this needs to change" />
-          <F id="pp-phone" label="Phone" type="tel" value={f.phone} onChange={set("phone")} />
+          <F id="pp-phone" label="Phone" type="tel" maxLength={20} value={f.phone} onChange={set("phone")} />
         </div>
-        <F id="pp-email" label="Email (optional)" type="email" value={f.email} onChange={set("email")} />
+        <F id="pp-email" label="Email (optional)" type="email" maxLength={150} value={f.email} onChange={set("email")} />
         <h2 className="m-0 mt-2 text-xl font-semibold tracking-tight">Emergency contact</h2>
         <div className="grid gap-3.5 sm:grid-cols-2">
-          <F id="pp-ecn" label="Name (optional)" value={f.ec_name} onChange={set("ec_name")} />
-          <F id="pp-ecp" label="Phone (optional)" type="tel" value={f.ec_phone} onChange={set("ec_phone")} />
+          <F id="pp-ecn" label="Name (optional)" maxLength={150} value={f.ec_name} onChange={set("ec_name")} />
+          <F id="pp-ecp" label="Phone (optional)" type="tel" maxLength={20} value={f.ec_phone} onChange={set("ec_phone")} />
         </div>
         <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-soft px-4 py-3.5 text-sm leading-snug">
           <input type="checkbox" checked={f.share} onChange={() => setF((x) => ({ ...x, share: !x.share }))} className="mt-0.5 h-6 w-6 flex-none accent-ink" />

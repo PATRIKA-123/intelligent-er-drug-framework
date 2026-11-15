@@ -44,7 +44,7 @@ export default function AcceptInvitation() {
   }
 
   return (
-    <div
+    <main
       className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 py-12 text-white"
       style={{ background: "radial-gradient(60% 55% at 18% 20%, rgba(211,234,227,0.55) 0%, rgba(211,234,227,0) 70%), radial-gradient(55% 60% at 85% 80%, rgba(231,222,246,0.55) 0%, rgba(231,222,246,0) 70%), #0E1016" }}
     >
@@ -76,7 +76,7 @@ export default function AcceptInvitation() {
               <input id="pw2" type={show ? "text" : "password"} autoComplete="new-password" className={inputCls} value={pw2} onChange={(e) => setPw2(e.target.value)} />
             </div>
             <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm">
-              <input type="checkbox" checked={show} onChange={() => setShow((x) => !x)} className="h-5 w-5 accent-[#D3EAE3]" /> Show passwords
+              <input type="checkbox" checked={show} onChange={() => setShow((x) => !x)} className="h-6 w-6 accent-[#D3EAE3]" /> Show passwords
             </label>
             {error && (
               <p role="alert" className="m-0 flex items-center gap-2 text-[13px] text-[#FFB4B4]">
@@ -97,6 +97,6 @@ export default function AcceptInvitation() {
           </>
         )}
       </div>
-    </div>
+    </main>
   );
 }

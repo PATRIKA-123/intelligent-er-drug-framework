@@ -234,12 +234,12 @@ export default function ParamedicCase() {
         </p>
       </div>
 
-      <nav aria-label="Case steps" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:hidden">
+      <nav aria-label="Case steps" className="flex flex-wrap gap-2 lg:hidden">
         {STEP_DEFS.map((st) => {
           const done = stepDone(c, st.key);
           return (
             <button key={st.key} type="button" onClick={() => jump(st.key)}
-              className={`flex min-h-11 flex-none items-center gap-2 rounded-full px-4 text-sm font-semibold ${done ? "bg-mint" : "bg-surface"}`}>
+              className={`flex min-h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${done ? "bg-mint" : "bg-surface"}`}>
               <Icon name={done ? "checkCircle" : st.icon} size={18} color={done ? "#187A41" : "currentColor"} strokeWidth={2.4} />
               {st.label.split(" ")[0]}
               <span className="sr-only">{done ? ", done" : ", to do"}</span>

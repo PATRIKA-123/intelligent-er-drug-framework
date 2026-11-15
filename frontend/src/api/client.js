@@ -38,15 +38,20 @@ export async function request(path, { method = "GET", body } = {}) {
   }
 
   let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    /* empty body */
+  let notJson = false;
+  const raw = await res.text().catch(() => "");
+  if (raw.trim()) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      notJson = true; // for example an error page from a proxy
+    }
   }
 
   if (!res.ok) {
     if (res.status === 401 && token) onUnauthorized();
     throw new ApiError(res.status, data?.error || data?.message || "Request failed", data);
   }
+  if (notJson) throw new ApiError(res.status, "The server sent a reply the app could not read. Try again in a moment.");
   return data;
 }

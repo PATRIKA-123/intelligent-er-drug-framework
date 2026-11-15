@@ -13,12 +13,12 @@ export default function PatientFields({ value, onChange, idPrefix = "pf" }) {
   );
   return (
     <>
-      {field("patient_name", "Patient name", null, { autoComplete: "off" })}
+      {field("patient_name", "Patient name", null, { autoComplete: "off", maxLength: 150 })}
       <div className="grid gap-3.5 sm:grid-cols-2">
         {field("dob", "Date of birth (optional)", null, { type: "date", max: TODAY })}
-        {field("phone", "Phone (optional)", "The patient needs the last 4 digits to add this visit to their profile", { type: "tel", inputMode: "tel", autoComplete: "off" })}
+        {field("phone", "Phone (optional)", "The patient needs the last 4 digits to add this visit to their profile", { type: "tel", inputMode: "tel", autoComplete: "off", maxLength: 20 })}
       </div>
-      {field("email", "Email (optional)", "With the date of birth, this links the visit to an existing patient profile", { type: "email", autoComplete: "off" })}
+      {field("email", "Email (optional)", "With the date of birth, this links the visit to an existing patient profile", { type: "email", autoComplete: "off", maxLength: 150 })}
     </>
   );
 }
