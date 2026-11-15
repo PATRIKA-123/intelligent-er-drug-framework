@@ -1,5 +1,7 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
+const { requireStayAccess } = require("../services/accessPolicy");
+const { getColumns } = require("./schemaCapabilities");
 
 const authMiddleware = require("../middleware/authMiddleware");
 const {
@@ -86,6 +88,7 @@ router.post(
 router.get(
   "/:stay_id/assigned-doctor",
   validateStayId,
+  requireStayAccess("stay_id", { postEr: true }),
   async (req, res) => {
     try {
       const doctor = await getAssignedDoctor(req.stayId);
@@ -105,26 +108,32 @@ router.get(
 
 
 // GET: Complete POST-ER view
-router.get("/:stay_id", validateStayId, async (req, res) => {
-  try {
-    const data = await getPostErData(req.stayId);
+router.get(
+  "/:stay_id",
+  validateStayId,
+  requireStayAccess("stay_id", { postEr: true }),
+  async (req, res) => {
+    try {
+      const data = await getPostErData(req.stayId, { role: req.user.role });
 
-    if (!data) {
-      return res.status(404).json({ error: "ED stay not found" });
+      if (!data) {
+        return res.status(404).json({ error: "ED stay not found" });
+      }
+
+      return res.json(data);
+    } catch (error) {
+      console.error("POST-ER fetch error:", error.message);
+      return res.status(500).json({ error: "Failed to fetch POST-ER data" });
     }
-
-    return res.json(data);
-  } catch (error) {
-    console.error("POST-ER fetch error:", error.message);
-    return res.status(500).json({ error: "Failed to fetch POST-ER data" });
   }
-});
+);
 
 // POST: Create discharge
 router.post(
   "/:stay_id/discharge",
   requireDoctor,
   validateStayId,
+  requireStayAccess("stay_id", { postEr: true }),
   async (req, res) => {
     try {
       const {
@@ -191,6 +200,7 @@ router.post(
   "/:stay_id/follow-ups",
   requireErStaff,
   validateStayId,
+  requireStayAccess("stay_id", { postEr: true }),
   async (req, res) => {
     try {
       const {
@@ -247,6 +257,7 @@ router.post(
   "/:stay_id/prescriptions",
   requireDoctor,
   validateStayId,
+  requireStayAccess("stay_id", { postEr: true }),
   async (req, res) => {
     try {
       const {
@@ -327,9 +338,10 @@ router.post(
 router.get(
   "/:stay_id/prescriptions",
   validateStayId,
+  requireStayAccess("stay_id", { postEr: true }),
   async (req, res) => {
     try {
-      const prescriptions = await getPrescriptions(req.stayId);
+      const prescriptions = await getPrescriptions(req.stayId, { role: req.user.role });
 
       return res.json({ prescriptions });
     } catch (error) {
@@ -347,6 +359,7 @@ router.patch(
   "/:stay_id/prescriptions/:prescription_id/review",
   requireDoctor,
   validateStayId,
+  requireStayAccess("stay_id", { postEr: true }),
   async (req, res) => {
     try {
       const prescriptionId = Number(req.params.prescription_id);
@@ -404,19 +417,24 @@ router.patch(
   }
 );
 // GET: Follow-ups for a stay
-router.get("/:stay_id/follow-ups", validateStayId, async (req, res) => {
-  try {
-    const data = await getPostErData(req.stayId);
+router.get(
+  "/:stay_id/follow-ups",
+  validateStayId,
+  requireStayAccess("stay_id", { postEr: true }),
+  async (req, res) => {
+    try {
+      const data = await getPostErData(req.stayId, { role: req.user.role });
 
-    if (!data) {
-      return res.status(404).json({ error: "ED stay not found" });
+      if (!data) {
+        return res.status(404).json({ error: "ED stay not found" });
+      }
+
+      return res.json({ follow_ups: data.follow_ups });
+    } catch (error) {
+      console.error("POST-ER follow-up fetch error:", error.message);
+      return res.status(500).json({ error: "Failed to fetch follow-ups" });
     }
-
-    return res.json({ follow_ups: data.follow_ups });
-  } catch (error) {
-    console.error("POST-ER follow-up fetch error:", error.message);
-    return res.status(500).json({ error: "Failed to fetch follow-ups" });
   }
-});
+);
 
 module.exports = router;

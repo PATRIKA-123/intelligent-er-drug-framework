@@ -6,6 +6,7 @@ const pool = require("../db");
 const authMiddleware = require("../middleware/authMiddleware");
 const { isValidCaseId, isValidPatientId } = require("../validators/idValidator");
 const { textFieldError } = require("../validators/textValidator");
+const { requireCaseAccess } = require("../services/accessPolicy");
 const CASE_TEXT_MAX_LENGTH = 30;
 
 // POST /api/emergency-cases
@@ -132,6 +133,7 @@ if (textError) {
 router.get(
   "/:id",
   authMiddleware,
+   requireCaseAccess(),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -191,6 +193,7 @@ const VALID_STATUSES = ["PRE_ER", "ARRIVED_ER", "ACTIVE_ER", "CLOSED"];
 router.patch(
   "/:id/status",
   authMiddleware,
+   requireCaseAccess(), 
   async (req, res) => {
     try {
       const { id } = req.params;

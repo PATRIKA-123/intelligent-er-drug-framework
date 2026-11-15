@@ -3,6 +3,7 @@ const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
 const { getClinicalSummary } = require("../services/clinicalSummaryService");
 const { isValidStayId } = require("../validators/idValidator");
+const { requireStayAccess } = require("../services/accessPolicy");
 
 // GET /api/clinical-summary/:stay_id
 // READ-ONLY. Aggregates already-persisted data for one ED stay:
@@ -10,7 +11,7 @@ const { isValidStayId } = require("../validators/idValidator");
 // NEWS2, latest trend, allergies/history, decision support, drug
 // safety findings, and clinical alerts. Does not run or trigger any
 // of the Phase 2-7 calculation/persistence logic.
-router.get("/:stay_id", authMiddleware, async (req, res) => {
+router.get("/:stay_id", authMiddleware, requireStayAccess(), async (req, res) => {
   try {
     const { stay_id } = req.params;
 
