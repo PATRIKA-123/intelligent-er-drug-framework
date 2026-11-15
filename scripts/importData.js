@@ -1,9 +1,18 @@
-require("dotenv").config();
-
 const fs = require("fs");
 const path = require("path");
-const csv = require("csv-parser");
-const { Client } = require("pg");
+
+// This script lives outside backend/, so Node would not find the packages that
+// "npm install" put in backend/node_modules. Load them from the backend
+// package so there is only ONE package.json and ONE install to maintain.
+// Supported command:  cd backend && npm install && npm run import:data
+const backendRequire = require("module").createRequire(
+  path.join(__dirname, "../backend/package.json")
+);
+
+backendRequire("dotenv").config();
+
+const csv = backendRequire("csv-parser");
+const { Client } = backendRequire("pg");
 
 // PostgreSQL connection
 const client = new Client({
