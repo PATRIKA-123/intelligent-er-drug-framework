@@ -3,6 +3,7 @@ const { getClinicalSummary } = require("./clinicalSummaryService");
 const { getPrescriptions } = require("./prescriptionService");
 const { getColumns } = require("./schemaCapabilities");
 
+
 async function getPostErData(stayId) {
   const clinicalSummary = await getClinicalSummary(stayId);
 

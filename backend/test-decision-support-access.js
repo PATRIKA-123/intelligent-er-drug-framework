@@ -32,7 +32,7 @@ function check(name, got, expected) {
   console.log((ok ? "PASS  " : "FAIL  ") + name + (ok ? "" : `   (got ${JSON.stringify(got)}, expected ${JSON.stringify(expected)})`));
 }
 
-let stubDelayMs = 0;
+let gate = null;          // when set, the stub pauses here so a second request can arrive
 let stubShouldFail = false;
 
 (async () => {
@@ -43,7 +43,7 @@ let stubShouldFail = false;
   await admin.query("SET search_path TO acl_ds");
   await admin.query(`
     CREATE TABLE patients (patient_id INT PRIMARY KEY, subject_id BIGINT);
-    CREATE TABLE users (user_id INT PRIMARY KEY, role TEXT, patient_id INT);
+    CREATE TABLE users (user_id INT PRIMARY KEY, username TEXT, role TEXT, is_active BOOLEAN DEFAULT TRUE, patient_id INT);
     CREATE TABLE ed_stays (stay_id BIGINT PRIMARY KEY, subject_id BIGINT);
     CREATE TABLE emergency_cases (case_id INT PRIMARY KEY, patient_id INT, stay_id BIGINT,
                                   case_status TEXT, created_by INT);
@@ -58,8 +58,9 @@ let stubShouldFail = false;
 
     INSERT INTO patients VALUES (1, 1000), (2, 2000);
     INSERT INTO ed_stays VALUES (100, 1000), (200, 2000), (300, 1000);
-    INSERT INTO users VALUES (10,'PATIENT',1),(20,'PARAMEDIC',NULL),(30,'ER_STAFF',NULL),
-                             (40,'DOCTOR',NULL),(41,'DOCTOR',NULL),(50,'ADMIN',NULL);
+    INSERT INTO users (user_id, username, role, patient_id) VALUES
+      (10,'u10','PATIENT',1),(20,'u20','PARAMEDIC',NULL),(30,'u30','ER_STAFF',NULL),
+      (40,'u40','DOCTOR',NULL),(41,'u41','DOCTOR',NULL),(50,'u50','ADMIN',NULL);
     -- stay 100: live ER case; stay 200: still PRE_ER; stay 300: live case, no doctor
     INSERT INTO emergency_cases VALUES (1,1,100,'ARRIVED_ER',20),(2,2,200,'PRE_ER',20),(3,1,300,'ACTIVE_ER',20);
     INSERT INTO stay_doctor_assignments (stay_id, doctor_user_id, status) VALUES (100,40,'ACTIVE'),(300,40,'ACTIVE');
@@ -75,6 +76,20 @@ let stubShouldFail = false;
   process.env.PGOPTIONS = "-c search_path=acl_ds";
   const pool = require("./db");
 
+  // SAFETY CHECK: every app connection must really be inside the throw-away
+  // schema. If the database ignores the setting (some poolers do), stop now,
+  // before any app code can touch your real tables.
+  const probe = await pool.query("SELECT current_schema() AS s");
+  if (probe.rows[0].s !== "acl_ds") {
+    console.error(
+      `ABORTED: connections are using schema "${probe.rows[0].s}", not acl_ds. ` +
+      "No app code was run. Use a direct (non-pooled) connection string for this test."
+    );
+    await admin.query("DROP SCHEMA IF EXISTS acl_ds CASCADE");
+    await admin.end(); await pool.end();
+    process.exit(2);
+  }
+
   // Replace only the clinical calculation; keep the real route, policy and alertService.
   const stub = (rel, exports) => {
     const p = require.resolve(rel);
@@ -85,7 +100,7 @@ let stubShouldFail = false;
   });
   stub("./services/decisionSupportService", {
     computeAndPersistDecisionSupport: async (stayId) => {
-      if (stubDelayMs) await new Promise((r) => setTimeout(r, stubDelayMs));
+      if (gate && !gate.used) { gate.used = true; gate.enter(); await gate.released; }
       if (stubShouldFail) throw new Error("forced failure");
       return {
         decision: { patient_id: 1, overall_risk: "LOW", decision_priority: "LOW",
@@ -141,14 +156,24 @@ let stubShouldFail = false;
       check("bad stay id -> 400", await post("abc", tokenFor(50, "ADMIN")), 400);
 
       // ---- concurrency: one run per stay at a time ----
-      stubDelayMs = 400;
-      const [a, b] = await Promise.all([
-        post(300, tokenFor(50, "ADMIN")),
-        post(300, tokenFor(40, "DOCTOR")),
-      ]);
-      check("two simultaneous runs -> one 200 and one 409", [a, b].sort(), [200, 409]);
+      // Deterministic: the first run is held inside the transaction (after it took
+      // the lock) until the second request has been answered. Network speed to the
+      // database cannot change the outcome.
+      let enter, release;
+      const entered = new Promise((r) => (enter = r));
+      const released = new Promise((r) => (release = r));
+      gate = { enter, released, used: false };
+      const first = post(300, tokenFor(50, "ADMIN"));
+      const tooSlow = new Promise((_, rej) =>
+        setTimeout(() => rej(new Error("first run never reached the processing step")), 30000));
+      await Promise.race([entered, tooSlow]);            // first run now holds the lock
+      const second = await post(300, tokenFor(40, "DOCTOR"));
+      release();
+      const firstStatus = await first;
+      gate = null;
+      check("second request while a run is in progress -> 409", second, 409);
+      check("the first run still finishes -> 200", firstStatus, 200);
       check("only one run's alerts exist", (await runIds(300)).length, 1);
-      stubDelayMs = 0;
       check("run after the first finished -> 200 (lock released)", await post(300, tokenFor(50, "ADMIN")), 200);
 
       // ---- failure rolls back and releases the lock ----

@@ -308,7 +308,10 @@ copied into ER medication-safety records or treated as reconciled.
   objects exist in the target database before running the API.
 - [`data/cleaned_vitals.csv`](./data/cleaned_vitals.csv) is a sample data asset.
   [`scripts/importData.js`](./scripts/importData.js) contains a CSV import
-  utility; verify its prerequisites and target database before running it.
+  utility. Supported command (it uses the backend's `node_modules`, so there is
+  only one install): `cd backend && npm install && npm run import:data`. It
+  imports into whatever database the `DB_*` variables point to, so use a
+  disposable test database and verify the target before running it.
 - The application has PostgreSQL-backed test scripts. Do not point test or
   import utilities at a production database.
 

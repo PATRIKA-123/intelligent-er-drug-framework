@@ -1,7 +1,7 @@
 ﻿const express = require("express");
 const router = express.Router();
 const { requireStayAccess } = require("../services/accessPolicy");
-const { getColumns } = require("./schemaCapabilities");
+
 
 const authMiddleware = require("../middleware/authMiddleware");
 const {

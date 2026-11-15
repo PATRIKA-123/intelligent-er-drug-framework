@@ -10,5 +10,6 @@ data_backup.sql
 backend/inspect-post-er-*.js
 backend/inspect-emergency-*.js
 backend/inspect-patient-*.js
+backend/test-invitation.json
 
 .DS_Store
