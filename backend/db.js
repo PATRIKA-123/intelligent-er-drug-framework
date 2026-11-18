@@ -1,11 +1,11 @@
-
 const path = require("path");
 
 require("dotenv").config({
   path: path.resolve(
     process.env.PRE_ER_TEST_ENV_FILE || path.join(__dirname, "../.env")
   ),
-  override: true,
+  // Do not let a checked-out .env override Render/CI injected settings.
+  override: false,
 });
 
 const { Pool } = require("pg");
@@ -17,7 +17,8 @@ const pool = new Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
 
-  // Enable SSL for Neon; keep local PostgreSQL unchanged.
+  // Existing behavior preserved for this B18-only patch; SSL certificate
+  // verification needs a separate, reviewed security fix.
   ssl:
     process.env.DB_SSL === "true"
       ? { rejectUnauthorized: false }

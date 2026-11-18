@@ -3,8 +3,20 @@ require("dotenv").config({
   path: path.resolve(
     process.env.PRE_ER_TEST_ENV_FILE || path.join(__dirname, "../.env")
   ),
-  override: true,
+  // Hosting-provider / CI environment variables must take precedence over .env.
+  override: false,
 });
+
+// B18: fail before importing routes or opening a listening socket if startup
+// credentials/configuration are missing or clearly unsafe.
+const { validateStartupEnvironment } = require("./config/validateEnvironment");
+try {
+  validateStartupEnvironment(process.env);
+} catch (error) {
+  console.error(`Startup configuration error: ${error.message}`);
+  process.exit(1);
+}
+
 const express = require("express");
 const cors = require("cors");
 const pool = require("./db");
@@ -14,7 +26,7 @@ const emergencyCasesRoutes = require("./routes/emergencyCases");
 const clinicalContextRoutes = require("./routes/clinicalContext");
 const clinicalSummaryRoutes = require("./routes/clinicalSummary");
 const decisionSupportRoutes = require("./routes/decisionSupport");
-const preErRoutes = require("./routes/preEr"); // <-- Added Pre-ER routes
+const preErRoutes = require("./routes/preEr");
 const clinicalPermissionsRoutes = require("./routes/clinicalPermissions");
 const postErRoutes = require("./routes/postEr");
 const doctorsRoutes = require("./routes/doctors");
@@ -43,7 +55,7 @@ app.get("/api/health", async (req, res) => {
 app.use("/api/stays", staysRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/emergency-cases", emergencyCasesRoutes);
-app.use("/api/emergency-cases", preErRoutes); // <-- Mounted Pre-ER routes
+app.use("/api/emergency-cases", preErRoutes);
 app.use("/api/clinical-context", clinicalContextRoutes);
 app.use("/api/clinical-summary", clinicalSummaryRoutes);
 app.use("/api/decision-support", decisionSupportRoutes);
