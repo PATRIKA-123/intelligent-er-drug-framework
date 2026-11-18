@@ -18,12 +18,17 @@ function extractVitalValue(obj, field) {
   if (field === "systolic_bp") lookupKeys.push("systolicBP", "systolic_bp");
   if (field === "respiratory_rate") lookupKeys.push("respiratoryRate", "respiratory_rate");
   if (field === "temperature") {
-  lookupKeys.push(
-    "temperature_celsius",
-    "temperatureCelsius",
-    "temperature"
-  );
-}
+    // A row from observations_clean has BOTH the raw temperature (which can be
+    // Fahrenheit) and temperature_celsius. Trends must use Celsius only, and a
+    // NULL temperature_celsius means "unit not verified": never fall back to
+    // the raw value. Objects with no Celsius field at all (for example Pre-ER
+    // entries, which are recorded in Celsius) still use "temperature".
+    const canonical = ["temperature_celsius", "temperatureCelsius"].filter(
+      (key) => key in obj
+    );
+    lookupKeys.length = 0;
+    lookupKeys.push(...(canonical.length > 0 ? canonical : ["temperature"]));
+  }
 
   for (const key of lookupKeys) {
     if (obj[key] !== undefined && obj[key] !== null && obj[key] !== "") {

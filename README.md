@@ -311,7 +311,13 @@ copied into ER medication-safety records or treated as reconciled.
   utility. Supported command (it uses the backend's `node_modules`, so there is
   only one install): `cd backend && npm install && npm run import:data`. It
   imports into whatever database the `DB_*` variables point to, so use a
-  disposable test database and verify the target before running it.
+  disposable test database and verify the target before running it. Every row is
+  validated first (numbers only, greater than 0, SpO2 at most 100, at most 2
+  decimals, real dates); nothing is rounded or corrected. If any row is invalid
+  nothing is imported. Options (after `--`): `--dry-run` checks the file without
+  connecting to the database, `--skip-invalid` imports only the valid rows and
+  lists the rejected ones, `--file <path>` imports another CSV. Example:
+  `npm run import:data -- --dry-run`.
 - The application has PostgreSQL-backed test scripts. Do not point test or
   import utilities at a production database.
 
