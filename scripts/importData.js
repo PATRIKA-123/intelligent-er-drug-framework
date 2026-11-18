@@ -38,12 +38,17 @@ const { classifyTemperature, celsiusForDatabase } = require("./temperatureUnits"
 //   --dry-run        check the file only; never connects to the database
 //   --skip-invalid   import the valid rows and report the rejected ones
 //                    (default: if ANY row is invalid, nothing is imported)
+//   --demo-defaults  the CSV has no consciousness, oxygen-support or SpO2-scale
+//                    columns. By default they are stored as UNKNOWN (NULL).
+//                    With this flag the old demonstration values (Alert / no
+//                    oxygen / scale 1) are stored AND marked as assumed in the
+//                    *_assumed columns. Refused if those columns are missing.
 //   --accept-inferred-celsius
 //                    treat values that can only be Celsius (25-45) as Celsius
 //                    and store them, labelled INFERRED_CELSIUS. Default: they
 //                    are kept as UNVERIFIED_CELSIUS with no canonical Celsius.
 const args = process.argv.slice(2);
-const KNOWN_FLAGS = ["--file", "--dry-run", "--skip-invalid", "--accept-inferred-celsius"];
+const KNOWN_FLAGS = ["--file", "--dry-run", "--skip-invalid", "--accept-inferred-celsius", "--demo-defaults"];
 const fileFlagIndex = args.indexOf("--file");
 const unknownFlags = args.filter(
   (a, i) => a.startsWith("--") && !KNOWN_FLAGS.includes(a)
@@ -58,6 +63,7 @@ if (unknownFlags.length > 0 || (fileFlagIndex !== -1 && !args[fileFlagIndex + 1]
 const dryRun = args.includes("--dry-run");
 const skipInvalid = args.includes("--skip-invalid");
 const acceptInferredCelsius = args.includes("--accept-inferred-celsius");
+const demoDefaults = args.includes("--demo-defaults");
 
 // CSV file path
 const csvFilePath =
@@ -109,6 +115,12 @@ fs.createReadStream(csvFilePath)
     for (const [status, count] of Object.entries(statusCounts)) {
       console.log(`  ${status}: ${count}`);
     }
+
+    console.log(
+      demoDefaults
+        ? "Consciousness / oxygen support / SpO2 scale: demo defaults will be stored and marked as ASSUMED."
+        : "Consciousness / oxygen support / SpO2 scale: not in the CSV, stored as UNKNOWN (NULL)."
+    );
 
     if (dryRun) {
       console.log("Dry run: no database connection was made. Nothing was imported.");
@@ -241,14 +253,40 @@ fs.createReadStream(csvFilePath)
         );
       }
 
+      // Flags that say whether those three inputs were measured or assumed.
+      const assumedColumns = [
+        "consciousness_assumed",
+        "oxygen_support_assumed",
+        "spo2_scale_assumed",
+      ];
+      const foundAssumed = await client.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND table_name = 'observations'
+           AND column_name = ANY($1)`,
+        [assumedColumns]
+      );
+      const presentAssumed = assumedColumns.filter((c) =>
+        foundAssumed.rows.some((r) => r.column_name === c)
+      );
+      if (demoDefaults && presentAssumed.length !== assumedColumns.length) {
+        // Never write invented clinical values without recording that they are invented.
+        throw new Error(
+          "--demo-defaults needs the columns " + assumedColumns.join(", ") +
+            " on observations. Apply migrations/20261116_002_observation_spo2_scale_assumed.sql. Nothing was imported."
+        );
+      }
+
       const baseColumns = [
         "stay_id", "observation_time", "temperature", "heart_rate",
         "respiratory_rate", "spo2", "systolic_bp", "data_source",
         "consciousness", "oxygen_support", "spo2_scale",
       ];
-      const insertColumns = hasUnitColumns
-        ? [...baseColumns, ...unitColumns]
-        : baseColumns;
+      const insertColumns = [
+        ...baseColumns,
+        ...(hasUnitColumns ? unitColumns : []),
+        ...presentAssumed,
+      ];
       const placeholders = insertColumns.map((_, i) => `$${i + 1}`).join(", ");
       const insertSql = `
         INSERT INTO observations (${insertColumns.join(", ")})
@@ -267,14 +305,16 @@ fs.createReadStream(csvFilePath)
           row.systolic_bp,
           row.data_source,
 
-          // NEWS2-related values
-          "Alert",
-          false,
-          1,
+          // NEWS2-related values: unknown unless demo defaults were requested
+          demoDefaults ? "Alert" : null,
+          demoDefaults ? false : null,
+          demoDefaults ? 1 : null,
         ];
         if (hasUnitColumns) {
           values.push(row.tempInfo.unit, row.tempInfo.status, celsiusForDatabase(row.tempInfo));
         }
+        // true only for values the importer invented; unknown (NULL) is not "assumed"
+        for (const _ of presentAssumed) values.push(demoDefaults);
 
         const result = await client.query(insertSql, values);
 

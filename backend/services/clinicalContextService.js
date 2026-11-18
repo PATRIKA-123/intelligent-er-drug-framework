@@ -1,4 +1,5 @@
 const pool = require("../db");
+const { assumedInputsSql } = require("./inputProvenance");
 
 /**
  * Gathers the clinical context for one ED stay.
@@ -78,23 +79,30 @@ async function getClinicalContext(stayId) {
   );
 
   // 5. Latest observation (cleaned/deduplicated view).
+  //    The *_assumed flags say whether consciousness / oxygen_support /
+  //    spo2_scale were measured or assumed demo defaults (B10).
+  const prov = await assumedInputsSql("o");
   const latestObservationResult = await pool.query(
-    `SELECT observation_id, observation_time, temperature, temperature_celsius,
-            heart_rate, respiratory_rate, spo2, systolic_bp,
-            consciousness, oxygen_support, spo2_scale
-     FROM observations_clean
-     WHERE stay_id = $1
-     ORDER BY observation_time DESC
+    `SELECT c.observation_id, c.observation_time, c.temperature, c.temperature_celsius,
+            c.heart_rate, c.respiratory_rate, c.spo2, c.systolic_bp,
+            c.consciousness, c.oxygen_support, c.spo2_scale,
+            ${prov.columns}
+     FROM observations_clean c
+     JOIN observations o ON o.observation_id = c.observation_id
+     WHERE c.stay_id = $1
+     ORDER BY c.observation_time DESC
      LIMIT 1`,
     [stayId]
   );
 
   // 6. Latest NEWS2 result.
   const latestNews2Result = await pool.query(
-    `SELECT observation_time, total_news2_score, risk_level
-     FROM news2_results_real
-     WHERE stay_id = $1
-     ORDER BY observation_time DESC
+    `SELECT n.observation_time, n.total_news2_score, n.risk_level,
+            ${prov.basedOn} AS based_on_assumed_inputs
+     FROM news2_results_real n
+     LEFT JOIN observations o ON o.observation_id = n.observation_id
+     WHERE n.stay_id = $1
+     ORDER BY n.observation_time DESC
      LIMIT 1`,
     [stayId]
   );

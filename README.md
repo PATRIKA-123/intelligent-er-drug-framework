@@ -318,6 +318,20 @@ copied into ER medication-safety records or treated as reconciled.
   connecting to the database, `--skip-invalid` imports only the valid rows and
   lists the rejected ones, `--file <path>` imports another CSV. Example:
   `npm run import:data -- --dry-run`.
+
+  Consciousness, oxygen support and SpO2 scale: the CSV has none of these.
+  By default they are now stored as unknown (NULL), not as normal-looking
+  values. `--demo-defaults` stores the old demonstration values (Alert / no
+  oxygen / scale 1) AND marks them assumed in `consciousness_assumed`,
+  `oxygen_support_assumed` and `spo2_scale_assumed`; it refuses to run if those
+  columns are missing
+  ([`migrations/20261116_002_observation_spo2_scale_assumed.sql`](./migrations/20261116_002_observation_spo2_scale_assumed.sql)
+  adds the third one). Rows imported by the old importer are marked with
+  `npm run backfill:assumed-inputs` (dry run) and
+  `npm run backfill:assumed-inputs -- --apply`. The API now returns these flags
+  on `GET /api/stays/:stay_id/observations`, and `based_on_assumed_inputs`
+  (`true` / `false` / `null` = unknown) on `GET /api/stays/:stay_id/news2` and in
+  the clinical context.
 - The application has PostgreSQL-backed test scripts. Do not point test or
   import utilities at a production database.
 
