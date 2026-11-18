@@ -19,6 +19,13 @@ try {
 
 const express = require("express");
 const cors = require("cors");
+const {
+  ALLOWED_METHODS,
+  ALLOWED_HEADERS,
+  parseAllowedOrigins,
+  isOriginAllowed,
+  applyApiSecurityHeaders,
+} = require("./config/httpSecurity");
 const pool = require("./db");
 const staysRoutes = require("./routes/stays");
 const authRoutes = require("./routes/auth");
@@ -31,9 +38,34 @@ const clinicalPermissionsRoutes = require("./routes/clinicalPermissions");
 const postErRoutes = require("./routes/postEr");
 const doctorsRoutes = require("./routes/doctors");
 
+// B16: validate origins before binding a port; never use wildcard CORS in production.
+let allowedOrigins;
+try {
+  allowedOrigins = parseAllowedOrigins(process.env);
+} catch (error) {
+  console.error(`Startup configuration error: ${error.message}`);
+  process.exit(1);
+}
+
 const app = express();
-app.use(cors());
-app.use(express.json());
+app.disable("x-powered-by");
+app.use(applyApiSecurityHeaders);
+app.use((req, res, next) => {
+  if (!isOriginAllowed(req.headers.origin, allowedOrigins)) {
+    return res.status(403).json({ error: "Origin not allowed" });
+  }
+  next();
+});
+app.use(cors({
+  origin(origin, callback) {
+    callback(null, origin && allowedOrigins.has(origin) ? origin : false);
+  },
+  methods: ALLOWED_METHODS,
+  allowedHeaders: ALLOWED_HEADERS,
+  credentials: false, // Bearer tokens, not browser cookies.
+  optionsSuccessStatus: 204,
+}));
+app.use(express.json({ limit: "128kb" }));
 
 app.get("/api/health", async (req, res) => {
   try {
