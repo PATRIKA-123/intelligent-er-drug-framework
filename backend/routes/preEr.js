@@ -1252,6 +1252,12 @@ const transportResult = await client.query(
         }
       }
 
+      // Two requests tried to link different cases to the same stay at the same
+      // time; the database's unique stay_id constraint let only one win.
+      if (err.code === "23505") {
+        return res.status(409).json({ error: "ER stay is already linked to another emergency case" });
+      }
+
       console.error("Error linking ER arrival:", err.message);
       return res.status(500).json({ error: "Failed to link ER arrival" });
     } finally {
@@ -1272,6 +1278,7 @@ const transportResult = await client.query(
         return res.status(500).json({
           message: "ER stay linked, but clinical processing could not load the linked stay.",
           case_linked: true,
+          retry_safe: true,
           case: linkedCase,
           processing: {
             status: "FAILED",
@@ -1297,6 +1304,7 @@ const transportResult = await client.query(
         return res.status(500).json({
           message: "ER stay linked, but the ER processing service returned no result.",
           case_linked: true,
+          retry_safe: true,
           case: linkedCase,
           processing: {
             status: "FAILED",
@@ -1322,10 +1330,26 @@ const transportResult = await client.query(
         },
       });
     } catch (err) {
+      // The link is already saved. Repeating the same request is safe: it will not
+      // link twice and the alerts are replaced, not duplicated.
+      if (err.statusCode === 409) {
+        return res.status(409).json({
+          message: "ER stay linked, but another processing run is already in progress for this stay. Repeat the request shortly.",
+          case_linked: true,
+          retry_safe: true,
+          case: linkedCase,
+          processing: {
+            status: "IN_PROGRESS",
+            error: err.message,
+          },
+        });
+      }
+
       console.error("ER clinical processing failed after linkage:", err.message);
       return res.status(500).json({
         message: "ER stay linked, but ER clinical processing failed.",
         case_linked: true,
+        retry_safe: true,
         case: linkedCase,
         processing: {
           status: "FAILED",

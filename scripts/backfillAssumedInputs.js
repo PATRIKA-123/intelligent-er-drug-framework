@@ -3,18 +3,24 @@
 //
 // Before B10 the importer wrote consciousness = 'Alert', oxygen_support = false
 // and spo2_scale = 1 for every row because the CSV has none of these fields.
-// Those rows look like measured results. This script sets the three *_assumed
-// flags to true on exactly those rows so the API can say so.
+// Those rows look like measured results. This script sets the *_assumed flags
+// to TRUE on exactly those rows so the API can say so.
 //
-// Safe by default: dry run unless you pass --apply. It never changes the
-// values themselves, only rows whose flags are still unset, and can be re-run.
+// Rules:
+//   * Only rows from the chosen data source whose values are the old defaults.
+//   * Only flags that are still NULL are filled. An existing TRUE or FALSE is
+//     NEVER changed, so partly classified rows (for example two flags already
+//     TRUE, the third column added later) are completed, not skipped.
+//   * Works with the older two-flag layout (no spo2_scale_assumed column) and
+//     with the three-flag layout. The values themselves are never changed.
+//
+// Safe by default: dry run unless you pass --apply. Can be re-run.
 //
 //   cd backend
 //   npm run backfill:assumed-inputs                    (dry run)
 //   npm run backfill:assumed-inputs -- --apply
 //   npm run backfill:assumed-inputs -- --data-source MY_SOURCE
 //
-// Needs migrations/20261116_002_observation_spo2_scale_assumed.sql for --apply.
 // Run on a TEST database first.
 
 const path = require("path");
@@ -69,51 +75,64 @@ const client = new Client({
       return;
     }
 
-    // "flags still unset" = never classified before
-    const unset = `consciousness_assumed IS NULL AND oxygen_support_assumed IS NULL` +
-      (hasScaleFlag ? ` AND spo2_scale_assumed IS NULL` : ``);
-    const legacyDefaults = `consciousness = 'Alert' AND oxygen_support IS FALSE AND spo2_scale = 1`;
+    // The flags that exist in THIS database (two-flag or three-flag layout).
+    const flagColumns = ["consciousness_assumed", "oxygen_support_assumed"];
+    if (hasScaleFlag) flagColumns.push("spo2_scale_assumed");
+
+    const needsUpdate = flagColumns.map((f) => `${f} IS NULL`).join(" OR ");
+    const anyFalse = flagColumns.map((f) => `${f} IS FALSE`).join(" OR ");
+    const legacyDefaults =
+      `data_source = $1 AND consciousness = 'Alert' AND oxygen_support IS FALSE AND spo2_scale = 1`;
+
+    const fillCounts = flagColumns
+      .map((f, i) => `count(*) FILTER (WHERE (${legacyDefaults}) AND ${f} IS NULL)::int AS fill_${i}`)
+      .join(",\n         ");
 
     const summary = await client.query(
       `SELECT
-         count(*) FILTER (WHERE ${unset} AND data_source = $1 AND ${legacyDefaults})::int AS to_mark,
-         count(*) FILTER (WHERE ${unset} AND NOT (data_source = $1 AND ${legacyDefaults}))::int AS unclassified,
-         count(*) FILTER (WHERE NOT (${unset}))::int AS already_flagged,
-         count(*)::int AS total
+         count(*)::int AS total,
+         count(*) FILTER (WHERE (${legacyDefaults}) AND (${needsUpdate}))::int AS to_update,
+         count(*) FILTER (WHERE (${legacyDefaults}) AND NOT (${needsUpdate}))::int AS already_complete,
+         count(*) FILTER (WHERE (${legacyDefaults}) AND (${anyFalse}))::int AS kept_false,
+         count(*) FILTER (WHERE NOT (${legacyDefaults}) AND (${needsUpdate}))::int AS unclassified,
+         ${fillCounts}
        FROM observations`,
       [dataSource]
     );
     const s = summary.rows[0];
     console.log(`Observations in total: ${s.total}`);
-    console.log(`Flags already set (left alone): ${s.already_flagged}`);
-    console.log(`Old invented defaults from data_source "${dataSource}" (will be marked assumed): ${s.to_mark}`);
+    console.log(`Old invented defaults from data_source "${dataSource}" needing at least one flag filled: ${s.to_update}`);
+    flagColumns.forEach((f, i) => console.log(`  ${f} to fill: ${s["fill_" + i]}`));
+    console.log(`Old invented defaults with every flag already set (left alone): ${s.already_complete}`);
+    console.log(`Old invented defaults with an explicit FALSE flag (FALSE is kept; only NULL flags are filled): ${s.kept_false}`);
     console.log(`Flags unset but values do not match the old defaults (left alone, provenance unknown): ${s.unclassified}`);
+    if (!hasScaleFlag) {
+      console.log(
+        "NOTE: the spo2_scale_assumed column does not exist yet, so the SpO2 scale is not flagged. " +
+          "Apply migrations/20261116_002_observation_spo2_scale_assumed.sql, then run this script again."
+      );
+    }
 
     if (!apply) {
-      console.log("Dry run: nothing was changed. Re-run with --apply to mark them.");
+      console.log("Dry run: nothing was changed. Re-run with --apply to fill the missing flags.");
       return;
     }
-    if (!hasScaleFlag) {
-      console.error("The spo2_scale_assumed column does not exist. Apply migrations/20261116_002_observation_spo2_scale_assumed.sql first. Nothing was changed.");
-      process.exitCode = 1;
-      return;
-    }
-    if (s.to_mark === 0) {
+    if (s.to_update === 0) {
       console.log("Nothing to update.");
       return;
     }
-1``
+
+    // COALESCE keeps any existing TRUE or FALSE and only fills NULL.
+    const setClause = flagColumns.map((f) => `${f} = COALESCE(${f}, TRUE)`).join(",\n           ");
     await client.query("BEGIN");
     const result = await client.query(
       `UPDATE observations
-       SET consciousness_assumed = TRUE,
-           oxygen_support_assumed = TRUE,
-           spo2_scale_assumed = TRUE
-       WHERE ${unset} AND data_source = $1 AND ${legacyDefaults}`,
+       SET ${setClause}
+       WHERE (${legacyDefaults}) AND (${needsUpdate})`,
       [dataSource]
     );
     await client.query("COMMIT");
-    console.log(`Marked ${result.rowCount} observations as assumed.`);
+    console.log(`Updated ${result.rowCount} observations.`);
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch (_) {}
     console.error("Backfill failed:", error.message);
