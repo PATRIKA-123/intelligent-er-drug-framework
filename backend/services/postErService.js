@@ -1,10 +1,16 @@
-﻿const pool = require("../db");
+const pool = require("../db");
 const { getClinicalSummary } = require("./clinicalSummaryService");
 const { getPrescriptions } = require("./prescriptionService");
 const { getColumns } = require("./schemaCapabilities");
 
-
-async function getPostErData(stayId) {
+async function getPostErData(stayId, options = {}) {
+  // Fail closed: never silently grant staff-level prescription visibility.
+  const role = options.role;
+  if (!["ADMIN", "DOCTOR", "ER_STAFF", "PARAMEDIC", "PATIENT"].includes(role)) {
+    const error = new Error("A valid authenticated role is required for Post-ER access");
+    error.statusCode = 403;
+    throw error;
+  }
   const clinicalSummary = await getClinicalSummary(stayId);
 
   if (!clinicalSummary) {
@@ -31,7 +37,7 @@ async function getPostErData(stayId) {
     [stayId]
   );
     const assignedDoctor = await getAssignedDoctor(stayId);
-  const prescriptions = await getPrescriptions(stayId);
+  const prescriptions = await getPrescriptions(stayId, { role });
 
    return {
     clinical_summary: clinicalSummary,
@@ -41,7 +47,6 @@ async function getPostErData(stayId) {
     prescriptions,
   };
 }
-
 
 
 async function getAssignedDoctor(stayId) {
@@ -82,7 +87,6 @@ async function getAssignedDoctor(stayId) {
 
   return result.rows[0] || null;
 }
-
 
 async function assignDoctorToStay(stayId, doctorUserId, assignedBy, notes) {
   const client = await pool.connect();
