@@ -48,6 +48,8 @@ try {
 }
 
 const app = express();
+// Behind Render's proxy, so rate limits see the real client address.
+app.set("trust proxy", 1);
 app.disable("x-powered-by");
 app.use(applyApiSecurityHeaders);
 app.use((req, res, next) => {

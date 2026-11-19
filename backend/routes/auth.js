@@ -4,10 +4,15 @@ const jwt = require("jsonwebtoken");
 const pool = require("../db");
 const authMiddleware = require("../middleware/authMiddleware");
 
+const rateLimit = require("../middleware/rateLimit");
+
 const router = express.Router();
 
+// B15: at most 20 login or register attempts per address every 15 minutes.
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+
 // Register a new user
-router.post("/register", async (req, res) => {
+router.post("/register", authLimiter, async (req, res) => {
   try {
     const { username, email, password, role } = req.body;
 
@@ -19,6 +24,13 @@ router.post("/register", async (req, res) => {
     ) {
       return res.status(400).json({
         error: "Username and password are required"
+      });
+    }
+
+    // B15: same rule as doctor accounts (12 to 128 characters).
+    if (password.length < 12 || password.length > 128) {
+      return res.status(400).json({
+        error: "Password must contain 12 to 128 characters"
       });
     }
 
@@ -76,7 +88,7 @@ router.post("/register", async (req, res) => {
 });
 
 // Log in an existing user
-router.post("/login", async (req, res) => {
+router.post("/login", authLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
 
