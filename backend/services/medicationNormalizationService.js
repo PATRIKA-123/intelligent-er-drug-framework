@@ -1,152 +1,142 @@
+"use strict";
+
 const pool = require("../db");
 
+// Frozen mapping tables have no published source-version columns. Until B04's
+// schema migration adds those fields, the provenance below identifies the
+// source table and mapping row ID; it does not claim a version that does not exist.
+function mappingError(kind, medicationId) {
+  const error = new Error(`Medication ${medicationId} has ${kind}; medication safety screening is incomplete`);
+  error.code = "AMBIGUOUS_MEDICATION_MAPPING";
+  error.statusCode = 422;
+  return error;
+}
+
+function normalized(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function groupByMedication(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = String(row.medication_id);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return groups;
+}
+
 /**
- * Builds the normalized, DDInter-ready canonical medication list for one
- * ED stay.
+ * Read-only normalization of a stay's medication snapshot.
+ * Duplicate canonical map rows are acceptable ONLY when their canonical
+ * identity and mapping status agree; conflicting duplicates fail closed.
+ * Combination ingredients may have multiple rows, but inconsistent mappings
+ * for the same ingredient are rejected. This never silently chooses a row.
  *
- * IMPORTANT: this does NOT perform new name-matching/normalization logic.
- * That work already exists as data in two frozen tables:
- *   - canonical_medication_map  (single-ingredient medications)
- *   - medication_components     (combination medications, decomposed into
- *                                 their active ingredients)
- * This service only READS that existing mapping data and assembles it per
- * stay. It never writes to canonical_medication_map or medication_components.
- *
- * Transparency rules (per project requirement):
- *   - A medication/component with mapping_status = 'MAPPED' contributes its
- *     canonical name to the result.
- *   - Anything else (PENDING status, or no mapping record at all) is NEVER
- *     silently dropped. It is reported separately in unmapped_medications
- *     with a reason, so missing/unverified data stays visible.
- *
- * Returns, for a stay with no medications at all, the same shape with
- * empty arrays (not an error) -- an empty medication list is a valid
- * clinical state, not a failure.
+ * options.requireComplete=true is for clinical screening. Missing / pending
+ * mapping data is then a 422, not a falsely clean interaction screen.
  */
-async function getNormalizedMedications(stayId) {
-  // 1. This stay's medications.
-  const medicationsResult = await pool.query(
+async function getNormalizedMedications(stayId, options = {}) {
+  const medResult = await pool.query(
     `SELECT medication_id, medication_name, normalized_name, charttime
-     FROM medications
-     WHERE stay_id = $1
-     ORDER BY charttime`,
+     FROM medications WHERE stay_id = $1 ORDER BY charttime, medication_id`,
     [stayId]
   );
+  const medications = medResult.rows;
+  const empty = {
+    stay_id: stayId, mapped_medications: [], canonical_identities: [],
+    unmapped_medications: [], mapping_status: "COMPLETE", mapping_sources: []
+  };
+  if (!medications.length) return empty;
 
-  const medications = medicationsResult.rows;
-
-  if (medications.length === 0) {
-    return {
-      stay_id: stayId,
-      mapped_medications: [],
-      canonical_identities: [],
-      unmapped_medications: [],
-    };
-  }
-
-  const medicationIds = medications.map((m) => m.medication_id);
-
-  // 2. Single-ingredient mappings for these medications.
-  //    DISTINCT ON (medication_id) guards against a known data issue:
-  //    4 medication_ids in canonical_medication_map currently have two
-  //    identical MAPPED rows each. This takes one row per medication_id
-  //    instead of returning duplicates.
-  const canonicalResult = await pool.query(
-    `SELECT DISTINCT ON (medication_id)
-            medication_id, canonical_name, mapping_status
+  const ids = medications.map(m => m.medication_id);
+  // Do NOT use DISTINCT ON: it hides contradictory mapping rows.
+  const canonical = await pool.query(
+    `SELECT mapping_id, medication_id, canonical_name, mapping_status
      FROM canonical_medication_map
-     WHERE medication_id = ANY($1::int[])
-     ORDER BY medication_id, mapping_id`,
-    [medicationIds]
+     WHERE medication_id = ANY($1::int[]) ORDER BY medication_id, mapping_id`, [ids]
   );
-
-  // 3. Combination-drug components for these medications.
-  //    A single medication_id can have multiple component rows.
-  const componentsResult = await pool.query(
-    `SELECT medication_id, component_name, component_canonical_name, mapping_status
+  const component = await pool.query(
+    `SELECT component_id, medication_id, component_name, component_canonical_name, mapping_status
      FROM medication_components
-     WHERE medication_id = ANY($1::int[])
-     ORDER BY medication_id, component_id`,
-    [medicationIds]
+     WHERE medication_id = ANY($1::int[]) ORDER BY medication_id, component_id`, [ids]
   );
-
-  // Index both result sets by medication_id for fast lookup in the loop below.
-  const canonicalByMedId = new Map();
-  for (const row of canonicalResult.rows) {
-    canonicalByMedId.set(row.medication_id, row);
-  }
-
-  const componentsByMedId = new Map();
-  for (const row of componentsResult.rows) {
-    if (!componentsByMedId.has(row.medication_id)) {
-      componentsByMedId.set(row.medication_id, []);
-    }
-    componentsByMedId.get(row.medication_id).push(row);
-  }
-
-  const mappedMedications = [];
-  const unmappedMedications = [];
-  const canonicalIdentitiesSet = new Set();
+  const directById = groupByMedication(canonical.rows);
+  const componentsById = groupByMedication(component.rows);
+  const mapped = [], unmapped = [], identities = new Set(), sources = [];
+  const markMapped = (med, name, source, componentOf, rowId) => {
+    mapped.push({ medication_id: med.medication_id, medication_name: name,
+      canonical_name: source.canonical, source: source.type, component_of: componentOf });
+    identities.add(source.canonical);
+    sources.push({ medication_id: med.medication_id, table: source.table, row_id: rowId,
+      mapping_version: null });
+  };
 
   for (const med of medications) {
-    const directMapping = canonicalByMedId.get(med.medication_id);
-    const components = componentsByMedId.get(med.medication_id);
+    const id = String(med.medication_id);
+    const direct = directById.get(id) || [];
+    const parts = componentsById.get(id) || [];
+    if (direct.length && parts.length) throw mappingError("both a direct mapping and component mappings", id);
 
-    if (directMapping) {
-      // Single-ingredient medication.
-      if (directMapping.mapping_status === "MAPPED" && directMapping.canonical_name) {
-        mappedMedications.push({
-          medication_id: med.medication_id,
-          medication_name: med.medication_name,
-          canonical_name: directMapping.canonical_name,
-          source: "DIRECT",
-          component_of: null,
-        });
-        canonicalIdentitiesSet.add(directMapping.canonical_name);
+    if (direct.length) {
+      const first = direct[0];
+      const same = direct.every(r => normalized(r.canonical_name) === normalized(first.canonical_name)
+        && normalized(r.mapping_status) === normalized(first.mapping_status));
+      if (!same) throw mappingError("conflicting canonical mappings", id);
+      if (normalized(first.mapping_status) === "mapped" && normalized(first.canonical_name)) {
+        markMapped(med, med.medication_name, {
+          type: "DIRECT", table: "canonical_medication_map", canonical: first.canonical_name.trim()
+        }, null, first.mapping_id);
       } else {
-        unmappedMedications.push({
-          medication_id: med.medication_id,
-          medication_name: med.medication_name,
-          reason: `Mapping status is ${directMapping.mapping_status}, not MAPPED`,
-        });
+        unmapped.push({ medication_id: med.medication_id, medication_name: med.medication_name,
+          reason: `Mapping status is ${first.mapping_status || "UNKNOWN"}, not MAPPED` });
       }
-    } else if (components && components.length > 0) {
-      // Combination medication, decomposed into its components.
-      for (const component of components) {
-        if (component.mapping_status === "MAPPED" && component.component_canonical_name) {
-          mappedMedications.push({
-            medication_id: med.medication_id,
-            medication_name: component.component_name,
-            canonical_name: component.component_canonical_name,
-            source: "COMPONENT",
-            component_of: med.medication_name,
-          });
-          canonicalIdentitiesSet.add(component.component_canonical_name);
+    } else if (parts.length) {
+      const byIngredient = new Map();
+      for (const row of parts) {
+        const ingredient = normalized(row.component_name);
+        // Unknown ingredient identity cannot be safely de-duplicated.
+        if (!ingredient) throw mappingError("an unnamed component", id);
+        const key = ingredient;
+        if (!byIngredient.has(key)) byIngredient.set(key, []);
+        byIngredient.get(key).push(row);
+      }
+      for (const rows of byIngredient.values()) {
+        const first = rows[0];
+        if (!rows.every(r => normalized(r.component_canonical_name) === normalized(first.component_canonical_name)
+          && normalized(r.mapping_status) === normalized(first.mapping_status))) {
+          throw mappingError("conflicting ingredient mappings", id);
+        }
+        if (normalized(first.mapping_status) === "mapped" && normalized(first.component_canonical_name)) {
+          markMapped(med, first.component_name, {
+            type: "COMPONENT", table: "medication_components", canonical: first.component_canonical_name.trim()
+          }, med.medication_name, first.component_id);
         } else {
-          unmappedMedications.push({
-            medication_id: med.medication_id,
-            medication_name: `${component.component_name} (component of ${med.medication_name})`,
-            reason: `Component mapping status is ${component.mapping_status}, not MAPPED`,
-          });
+          unmapped.push({ medication_id: med.medication_id,
+            medication_name: `${first.component_name} (component of ${med.medication_name})`,
+            reason: `Component mapping status is ${first.mapping_status || "UNKNOWN"}, not MAPPED` });
         }
       }
     } else {
-      // No mapping record of any kind exists for this medication_id.
-      unmappedMedications.push({
-        medication_id: med.medication_id,
-        medication_name: med.medication_name,
-        reason: "No canonical mapping or component record found",
-      });
+      unmapped.push({ medication_id: med.medication_id, medication_name: med.medication_name,
+        reason: "No canonical mapping or component record found" });
     }
   }
 
-  return {
-    stay_id: stayId,
-    mapped_medications: mappedMedications,
-    // Deduplicated, ready to hand to Phase 4's pair generation.
-    canonical_identities: Array.from(canonicalIdentitiesSet),
-    unmapped_medications: unmappedMedications,
+  const result = {
+    stay_id: stayId, mapped_medications: mapped, canonical_identities: [...identities],
+    unmapped_medications: unmapped,
+    mapping_status: unmapped.length ? "INCOMPLETE" : "COMPLETE",
+    mapping_sources: sources
   };
+  if (options.requireComplete && unmapped.length) {
+    const error = new Error("Medication normalization is incomplete; clinical interaction screening was not persisted");
+    error.code = "INCOMPLETE_MEDICATION_MAPPING";
+    error.statusCode = 422;
+    error.unmapped_count = unmapped.length;
+    throw error;
+  }
+  return result;
 }
 
 module.exports = { getNormalizedMedications };
