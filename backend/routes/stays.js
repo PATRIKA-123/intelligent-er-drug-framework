@@ -24,17 +24,24 @@ router.get("/", authMiddleware, async (req, res) => {
   try {
     const { clause, params } = await stayListFilter(req.user);
 
+    // B20: paging. ?limit=20 (1 to 100) and ?offset=0. Defaults keep the old behaviour.
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+    const pageParams = [...params, limit, offset];
+
     const result = await pool.query(
       `SELECT s.stay_id, s.subject_id, s.intime, s.outtime, s.gender,
               s.disposition, s.chiefcomplaint, s.acuity
        FROM ed_stays s
        WHERE ${clause}
        ORDER BY s.intime
-       LIMIT 20`,
-      params
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      pageParams
     );
 
     res.json({
+      limit,
+      offset,
       count: result.rowCount,
       stays: result.rows
     });

@@ -902,12 +902,6 @@ router.get(
 
       const assessment = await getLatestCaseAssessment(caseId);
       const vital = await getLatestCaseVital(caseId);
-      console.log("PRE-ER GET HANDLER HIT", {
-  file: __filename,
-  caseId,
-  assessmentFound: !!assessment,
-  vitalFound: !!vital,
-});
       const preview = buildNEWS2PreviewFromCase(caseId, assessment, vital);
 
       return res.status(200).json({ case_id: Number(caseId), ...preview });
