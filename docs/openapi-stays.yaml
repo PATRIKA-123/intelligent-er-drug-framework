@@ -1,0 +1,198 @@
+openapi: 3.0.3
+info:
+  title: Parvah ED Stay API — B19/B20 contract
+  version: 1.0.0
+  description: >-
+    Contract for the ED stay routes covered by B19/B20. Other Parvah routes
+    require their own schema documentation before B20 can be fully closed.
+servers:
+  - url: /api
+security:
+  - bearerAuth: []
+paths:
+  /stays:
+    get:
+      summary: List stays visible to the current user
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 }
+        - name: search
+          in: query
+          description: Case-insensitive literal substring of chief complaint or exact stay ID.
+          schema: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        '200':
+          description: Authorized stays, ordered by intime (nulls last), then stay_id.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [limit, offset, count, total, has_more, stays]
+                properties:
+                  limit: { type: integer }
+                  offset: { type: integer }
+                  count: { type: integer }
+                  total: { type: integer, description: Total number of authorized matching stays }
+                  has_more: { type: boolean }
+                  stays:
+                    type: array
+                    items: { $ref: '#/components/schemas/Stay' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /stays/{stay_id}:
+    get:
+      summary: Get one authorized stay
+      parameters:
+        - $ref: '#/components/parameters/StayId'
+      responses:
+        '200':
+          description: Authorized stay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Stay' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /stays/{stay_id}/observations:
+    get:
+      summary: List observations for an authorized stay
+      parameters:
+        - $ref: '#/components/parameters/StayId'
+      responses:
+        '200':
+          description: Stored observations with temperature and assumed-input provenance.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StayObservations' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /stays/{stay_id}/news2:
+    get:
+      summary: List stored NEWS2 scores for an authorized stay
+      parameters:
+        - $ref: '#/components/parameters/StayId'
+      responses:
+        '200':
+          description: Persisted NEWS2 scores with assumed-input provenance.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StayNews2' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /stays/{stay_id}/trends:
+    get:
+      summary: List persisted trend results for an authorized stay
+      parameters:
+        - $ref: '#/components/parameters/StayId'
+      responses:
+        '200':
+          description: Stored trend results
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StayTrends' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /stays/{stay_id}/diagnoses:
+    get:
+      summary: List diagnoses for an authorized stay
+      parameters:
+        - $ref: '#/components/parameters/StayId'
+      responses:
+        '200':
+          description: Stored diagnoses
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StayDiagnoses' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    StayId:
+      name: stay_id
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[0-9]+$' }
+  schemas:
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error: { type: string }
+        code: { type: string }
+    Stay:
+      type: object
+      properties:
+        stay_id: { type: string }
+        subject_id: { type: string }
+        intime: { type: string, nullable: true }
+        outtime: { type: string, nullable: true }
+        gender: { type: string, nullable: true }
+        disposition: { type: string, nullable: true }
+        chiefcomplaint: { type: string, nullable: true }
+        acuity: { type: integer, nullable: true }
+    StayObservations:
+      type: object
+      properties:
+        stay_id: { type: string }
+        count: { type: integer }
+        observations: { type: array, items: { type: object, additionalProperties: true } }
+    StayNews2:
+      type: object
+      properties:
+        stay_id: { type: string }
+        count: { type: integer }
+        news2_results: { type: array, items: { type: object, additionalProperties: true } }
+    StayTrends:
+      type: object
+      properties:
+        stay_id: { type: string }
+        count: { type: integer }
+        trends: { type: array, items: { type: object, additionalProperties: true } }
+    StayDiagnoses:
+      type: object
+      properties:
+        stay_id: { type: string }
+        count: { type: integer }
+        diagnoses: { type: array, items: { type: object, additionalProperties: true } }
+  responses:
+    InvalidRequest:
+      description: Invalid request input
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthenticated:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Authorization denied
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Not found or concealed by access policy
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
