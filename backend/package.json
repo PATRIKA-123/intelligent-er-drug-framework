@@ -9,7 +9,7 @@
     "import:data": "node ../scripts/importData.js",
     "backfill:temperature-units": "node ../scripts/backfillTemperatureUnits.js",
     "backfill:assumed-inputs": "node ../scripts/backfillAssumedInputs.js",
-    "test": "node test-rate-limit.js && node test-news2-unknown-inputs.js && node test-id-validator.js && node test-text-validator.js && node test-startup-environment.js && node test-http-security.js && node --test test-post-er-prescription-privacy.js"
+    "test": "node test-rate-limit.js && node test-news2-unknown-inputs.js && node test-id-validator.js && node test-text-validator.js && node test-startup-environment.js && node test-http-security.js && node --test test-post-er-prescription-privacy.js && node test-case-status-race.js && node test-post-er-invariants.js && node test-import-outliers.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
