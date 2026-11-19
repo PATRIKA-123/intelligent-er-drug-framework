@@ -99,12 +99,31 @@ router.get("/:stay_id/news2", authMiddleware, requireStayAccess(), async (req, r
     if (!isValidStayId(stay_id)) return res.status(400).json({ error: "stay_id must be a valid integer" });
     if (!(await stayExists(stay_id))) return res.status(404).json({ error: "ED stay not found" });
     const prov = await assumedInputsSql("o");
+    // B10_DURABLE_NEWS2_PROVENANCE: use stored snapshot where migrated.
+    const { hasColumn } = require("../services/schemaCapabilities");
+    const hasSnapshot = await hasColumn("news2_input_provenance", "observation_id");
+    const individualFlags = hasSnapshot
+      ? "s.consciousness_assumed, s.oxygen_support_assumed, s.spo2_scale_assumed,"
+      : prov.columns + ",";
+    const basedOn = hasSnapshot
+      ? "CASE WHEN s.consciousness_assumed IS TRUE OR s.oxygen_support_assumed IS TRUE OR s.spo2_scale_assumed IS TRUE THEN TRUE WHEN s.consciousness_assumed IS FALSE AND s.oxygen_support_assumed IS FALSE AND s.spo2_scale_assumed IS FALSE THEN FALSE ELSE NULL END"
+      : prov.basedOn;
+    const missing = hasSnapshot
+      ? "CASE WHEN s.observation_id IS NULL THEN NULL ELSE (s.consciousness_missing OR s.oxygen_support_missing OR s.spo2_scale_missing) END"
+      : "CASE WHEN o.observation_id IS NULL THEN NULL ELSE (o.consciousness IS NULL OR o.oxygen_support IS NULL OR o.spo2_scale IS NULL) END";
+    const origin = hasSnapshot ? "s.provenance_origin" : "'LIVE_DERIVED'::text";
+    const snapJoin = hasSnapshot ? "LEFT JOIN news2_input_provenance s ON s.observation_id = n.observation_id" : "";
+
     const result = await pool.query(
       `SELECT n.observation_id, n.observation_time, n.total_news2_score, n.risk_level,
               n.respiratory_score, n.spo2_score, n.oxygen_score, n.systolic_bp_score,
               n.heart_rate_score, n.temperature_score, n.consciousness_score,
-              ${prov.basedOn} AS based_on_assumed_inputs
+              ${individualFlags}
+              ${basedOn} AS based_on_assumed_inputs,
+              ${missing} AS based_on_missing_inputs,
+              ${origin} AS input_provenance_origin
        FROM news2_results_real n LEFT JOIN observations o ON o.observation_id = n.observation_id
+       ${snapJoin}
        WHERE n.stay_id = $1 ORDER BY n.observation_time`, [stay_id]
     );
     return res.json({ stay_id, count: result.rowCount, news2_results: result.rows });

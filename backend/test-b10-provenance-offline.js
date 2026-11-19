@@ -1,0 +1,11 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const script=require('../scripts/b10-provenance-local');const root=path.resolve(__dirname,'..');
+const sql=fs.readFileSync(path.join(root,'migrations/20261119_004_news2_input_provenance.sql'),'utf8');
+const ok={DB_NAME:'intelligent_er_drug_test',PRE_ER_TEST_DATABASE_NAME:'intelligent_er_drug_test',DB_HOST:'localhost',DB_SSL:'false',NODE_ENV:'test',DB_USER:'postgres',DB_PASSWORD:'test',B10_CONFIRM_LOCAL_TEST:'intelligent_er_drug_test'};
+test('B10 refuses remote / SSL / production / other databases',()=>{for(let patch of [{DB_HOST:'neon.tech'},{DB_SSL:'true'},{NODE_ENV:'production'},{DB_NAME:'intelligent_er_rebuild2_test'},{B10_CONFIRM_LOCAL_TEST:''}])assert.ok(script.preflight({...ok,...patch},['--apply']).length)});
+test('B10 accepts only exact local test and opt-in',()=>{assert.deepEqual(script.preflight(ok,['--apply']),[]);assert.deepEqual(script.preflight(ok,['--verify']),[]);assert.ok(script.preflight(ok,[]).length);assert.ok(script.preflight(ok,['--verify','--apply']).length)});
+test('B10 handles IPv6 and mapped loopbacks',()=>{for(const x of ['::1/128','127.0.0.1/32','::ffff:127.0.0.1/128','localhost'])assert.ok(script.loopback(x),x);assert.equal(script.loopback('10.0.0.1'),false)});
+test('B10 historical provenance is honestly labeled',()=>{assert.match(sql,/HISTORICAL_DERIVED/);assert.match(sql,/CAPTURED_AT_INSERT/);assert.match(sql,/FROM public.news2_results_real n JOIN public.observations o/)});
+test('B10 audit and snapshots block UPDATE and DELETE',()=>{assert.match(sql,/b10_immutable_news2_input_provenance BEFORE UPDATE OR DELETE/);assert.match(sql,/b10_immutable_news2_provenance_audit BEFORE UPDATE OR DELETE/);assert.match(sql,/b10_observation_input_audit/)});
+test('B10 refuses missing NEWS2 links and duplicate observation ids',()=>{assert.match(sql,/Duplicate NEWS2 observation_id/);assert.match(sql,/NEWS2 row without exact observation link/)});
