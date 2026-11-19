@@ -1,11 +1,3 @@
-// Row validation for the vitals CSV import (audit finding B08).
-//
-// Rules here are DATA-VALIDITY rules (can this value be stored faithfully?),
-// not clinical rules. Unusual-but-possible values (for example a very low
-// blood pressure) are NOT rejected here; flagging those is a separate step (B17).
-//
-// Nothing is rounded or corrected. A value is either stored exactly as given
-// or the row is reported with its row number, field and reason.
 
 const NUMERIC_VITALS = [
   { field: "temperature" },
@@ -15,10 +7,9 @@ const NUMERIC_VITALS = [
   { field: "systolic_bp" },
 ];
 
-// observations vital columns are numeric(5,2): at most 999.99, 2 decimals.
 const MAX_STORABLE = 999.99;
 const MAX_DECIMALS = 2;
-const PLAIN_NUMBER = /^-?\d+(\.\d+)?$/; // rejects NaN, Infinity, 1e3, 0x10, "1,5"
+const PLAIN_NUMBER = /^-?\d+(\.\d+)?$/;
 
 function parseVital({ field, max, maxReason }, raw) {
   if (raw === undefined || raw === null) return { error: "value is missing" };
@@ -44,7 +35,7 @@ function parseVital({ field, max, maxReason }, raw) {
 function parseId(raw) {
   const text = String(raw === undefined || raw === null ? "" : raw).trim();
   if (!/^\d{1,18}$/.test(text) || Number(text) <= 0) return null;
-  return text; // keep as text: ids are bigint
+  return text;
 }
 
 function parseTimestamp(raw) {
@@ -59,7 +50,6 @@ function parseTimestamp(raw) {
   return sameParts ? text : null;
 }
 
-// rowNumber is the line number in the CSV file (header is line 1).
 function validateRow(row, rowNumber) {
   const problems = [];
   const add = (field, value, reason) =>
@@ -89,7 +79,6 @@ function validateRow(row, rowNumber) {
   return { ok: true, values: { subject_id, stay_id, timestamp, data_source, ...vitals } };
 }
 
-// records[0] is CSV line 2 (line 1 is the header).
 function validateAll(records) {
   const validRows = [];
   const problems = [];
@@ -102,4 +91,30 @@ function validateAll(records) {
   return { validRows, problems, rejectedRowCount };
 }
 
-module.exports = { validateRow, validateAll, MAX_STORABLE, MAX_DECIMALS };
+const REVIEW_RANGES = {
+  heart_rate: { min: 20, max: 250 },
+  respiratory_rate: { min: 4, max: 60 },
+  spo2: { min: 50, max: 100 },
+  systolic_bp: { min: 40, max: 300 },
+};
+
+function findReviewWarnings(validRows) {
+  const warnings = [];
+  for (const row of validRows) {
+    for (const [field, range] of Object.entries(REVIEW_RANGES)) {
+      const value = row[field];
+      if (value < range.min || value > range.max) {
+        warnings.push({
+          stay_id: row.stay_id,
+          timestamp: row.timestamp,
+          field,
+          value,
+          reason: `outside ${range.min} to ${range.max}; please check the source data`,
+        });
+      }
+    }
+  }
+  return warnings;
+}
+
+module.exports = { validateRow, validateAll, findReviewWarnings, REVIEW_RANGES, MAX_STORABLE, MAX_DECIMALS };
