@@ -14,6 +14,7 @@ const cors = require("cors");
 const { ALLOWED_METHODS, ALLOWED_HEADERS, parseAllowedOrigins,
   isOriginAllowed, applyApiSecurityHeaders } = require("./config/httpSecurity");
 const { apiErrorContract, apiErrorHandler } = require("./middleware/apiErrorContract");
+const { clinicalAudit } = require("./middleware/clinicalAudit");
 const pool = require("./db");
 const staysRoutes = require("./routes/stays");
 const authRoutes = require("./routes/auth");
@@ -50,6 +51,9 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "128kb" }));
 app.use(apiErrorContract);
+// B26: log protected clinical API outcomes with minimal redacted metadata.
+// This is an application-level interim trail; Patrika will implement durable audit persistence.
+app.use(clinicalAudit);
 app.get("/api/health", async (_req, res) => {
   try {
     const result = await pool.query("SELECT current_database() AS database_name");
