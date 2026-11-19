@@ -241,14 +241,23 @@ if (
         });
       }
 
+      // B12: change the status only if it is still what we just read. If a
+      // second request moved the case first, no row matches and we return 409
+      // instead of silently overwriting that change.
       const result = await pool.query(
         `UPDATE emergency_cases
          SET case_status = $1
-         WHERE case_id = $2
+         WHERE case_id = $2 AND case_status = $3
          RETURNING case_id, patient_id, stay_id, temporary_case_code,
                    case_status, source, created_by, created_at`,
-        [targetStatus, id]
+        [targetStatus, id, currentStatus]
       );
+
+      if (result.rowCount === 0) {
+        return res.status(409).json({
+          error: "The case status was changed by another request. Reload and try again.",
+        });
+      }
 
       return res.status(200).json({
         message: "Emergency case status updated successfully",
