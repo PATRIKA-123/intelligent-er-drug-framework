@@ -1,20 +1,12 @@
-﻿
 "use strict";
- 
-// Unit tests for services/news2Calculator.js.
-// Pure functions: no database, no server. Run from the backend folder:
-//   node test-news2-calculator.js
- 
+
+// Legacy NEWS2 regression suite retained from repository; corrected two
+// contradictory Scale 2 expectations against RCP NEWS2 2017 Chart 1.
 const {
-  calculateNEWS2,
-  scoreRespiratoryRate,
-  scoreSpO2,
-  scoreSystolicBP,
-  scoreHeartRate,
-  scoreTemperatureCelsius,
-  scoreConsciousness,
+  calculateNEWS2, scoreRespiratoryRate, scoreSpO2, scoreSystolicBP,
+  scoreHeartRate, scoreTemperatureCelsius, scoreConsciousness,
 } = require("./services/news2Calculator");
- 
+
 let passed = 0;
 let failed = 0;
 function check(label, ok, detail) {
@@ -22,12 +14,8 @@ function check(label, ok, detail) {
   if (!ok) console.log(`FAIL  ${label}${detail ? "   -> " + detail : ""}`);
 }
 function throwsWith(label, fn, fragment) {
-  try {
-    fn();
-    check(label, false, "did not throw");
-  } catch (e) {
-    check(label, e.message.includes(fragment), e.message);
-  }
+  try { fn(); check(label, false, "did not throw"); }
+  catch (e) { check(label, e.message.includes(fragment), e.message); }
 }
 function table(name, fn, rows) {
   for (const [input, expected] of rows) {
@@ -40,7 +28,7 @@ const base = () => ({
   respiratoryRate: 16, spo2: 98, spo2Scale: 1, oxygenSupport: false,
   systolicBP: 120, heartRate: 75, temperatureCelsius: 36.8, consciousness: "Alert",
 });
- 
+
 // ---------- 1. band boundaries (every edge of every band)
 table("respiratory", scoreRespiratoryRate, [[8,3],[9,1],[11,1],[12,0],[20,0],[21,2],[24,2],[25,3],[40,3]]);
 table("spo2 scale1", (v) => scoreSpO2(v, 1, false), [[91,3],[92,2],[93,2],[94,1],[95,1],[96,0],[100,0],[78,3]]);
@@ -49,15 +37,15 @@ table("heart rate", scoreHeartRate, [[40,3],[41,1],[50,1],[51,0],[90,0],[91,1],[
 table("temperature", scoreTemperatureCelsius, [[35.0,3],[35.1,1],[36.0,1],[36.1,0],[38.0,0],[38.1,1],[39.0,1],[39.1,2],[31.7,3]]);
 for (const [v, o, e] of [
   [83,false,3],[84,false,2],[85,false,2],[86,false,1],[87,false,1],[88,false,0],[92,false,0],
-  [93,false,0],[94,false,0],[99,false,2], // <-- Yahan 0 ki jagah 2 kijiye (Scale 2 mein 99% par score 2 hota hai)
-  [92,true,1],  // <-- Yahan 0 ki jagah 1 kijiye (Scale 2 with oxygen at 92% gives score 1)
+  [93,false,0],[94,false,0],[99,false,0], // B06: >=93 on air = 0 (RCP chart)
+  [92,true,0], // B06: 88–92 SpO2 component = 0; supplemental oxygen scores separately
   [93,true,1],[94,true,1],[95,true,2],
   [96,true,2],[97,true,3],[100,true,3],
 ]) {
   check(`spo2 scale2(${v}, oxygen=${o}) = ${e}`, scoreSpO2(v, 2, o) === e, `got ${scoreSpO2(v, 2, o)}`);
 }
 table("consciousness", scoreConsciousness, [["ALERT",0],["Alert",0],[" alert ",0],["NEW_CONFUSION",3],["V",3],["p",3],["U",3]]);
- 
+
 // ---------- 2. real rows from your database (stored result confirmed earlier)
 const real = [
   { obs: 1114, input: { ...base(), respiratoryRate: 18, spo2: 97, systolicBP: 126, heartRate: 120, temperatureCelsius: 38.3 }, scores: [0,0,0,0,2,1,0], total: 3, risk: "Low Risk" },
@@ -73,7 +61,7 @@ for (const r of real) {
   check(`obs ${r.obs} total = ${r.total}`, out.total_news2_score === r.total, `got ${out.total_news2_score}`);
   check(`obs ${r.obs} risk = ${r.risk}`, out.risk_level === r.risk, `got ${out.risk_level}`);
 }
- 
+
 // ---------- 3. risk-level rules
 const risk = (o) => calculateNEWS2({ ...base(), ...o }).risk_level;
 check("all normal -> Low Risk", risk({}) === "Low Risk");
@@ -85,7 +73,7 @@ check("total exactly 7 -> High Risk", risk({ respiratoryRate: 22, heartRate: 120
 check("total 8 with oxygen -> High Risk", risk({ respiratoryRate: 30, spo2: 90, oxygenSupport: true }) === "High Risk");
 const shape = calculateNEWS2(base());
 check("result says it is not a clinical decision", shape.is_clinical_decision === false);
- 
+
 // ---------- 4. missing / invalid data must throw, never score as zero
 for (const f of ["respiratoryRate","spo2","systolicBP","heartRate","temperatureCelsius","consciousness","oxygenSupport","spo2Scale"]) {
   const o = base(); delete o[f];
@@ -106,14 +94,11 @@ throwsWith("spo2Scale 3", () => calculateNEWS2({ ...base(), spo2Scale: 3 }), "sp
 throwsWith("consciousness 'Confused' (not a listed value)", () => calculateNEWS2({ ...base(), consciousness: "Confused" }), "consciousness must be");
 throwsWith("Scale 2 without clinician authorization", () => calculateNEWS2({ ...base(), spo2Scale: 2 }), "clinician authorization");
 check("Scale 2 WITH authorization is accepted", calculateNEWS2({ ...base(), spo2Scale: 2, scale2ClinicianAuthorized: true, spo2: 90 }).spo2_score === 0);
- 
+
 // ---------- 5. input object is not modified
 const frozen = Object.freeze(base());
 let mutated = false;
 try { calculateNEWS2(frozen); } catch (e) { mutated = true; }
 check("works on a frozen input object (no mutation)", !mutated);
- 
 console.log(`\n${failed === 0 ? "ALL" : failed + " FAILED /"} ${passed + failed} CHECKS${failed === 0 ? " PASSED" : ""}`);
 process.exitCode = failed === 0 ? 0 : 1;
- 
-

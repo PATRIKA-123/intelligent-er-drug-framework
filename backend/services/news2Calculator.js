@@ -1,14 +1,8 @@
-﻿"use strict";
+"use strict";
 
 const PARAMETERS = [
-  "respiratoryRate",
-  "spo2",
-  "systolicBP",
-  "heartRate",
-  "temperatureCelsius",
-  "consciousness",
-  "oxygenSupport",
-  "spo2Scale",
+  "respiratoryRate", "spo2", "systolicBP", "heartRate",
+  "temperatureCelsius", "consciousness", "oxygenSupport", "spo2Scale",
 ];
 
 function requireNumber(value, name) {
@@ -30,13 +24,19 @@ function scoreRespiratoryRate(value) {
 
 function scoreSpO2(value, scale, oxygenSupport) {
   requireNumber(value, "spo2");
-
-  if (value < 0 || value > 100) {
-    throw new Error("spo2 must be 0–100");
+  if (value < 0 || value > 100) throw new Error("spo2 must be 0–100");
+  if (![1, 2].includes(scale)) throw new Error("spo2Scale must be 1 or 2");
+  if (typeof oxygenSupport !== "boolean") {
+    throw new Error("oxygenSupport must be true or false");
   }
 
-  if (![1, 2].includes(scale)) {
-    throw new Error("spo2Scale must be 1 or 2");
+  // The RCP NEWS2 chart expresses saturation categories as whole percentages.
+  // Rather than silently scoring a fractional reading as normal (the former
+  // 83.5/85.5/87.5 gap), reject non-whole inputs. The measurement should be
+  // verified and explicitly recorded as a whole percent before a NEWS2 score
+  // is persisted. No undocumented rounding is performed here.
+  if (!Number.isInteger(value)) {
+    throw new Error("spo2 must be a whole-number percentage for NEWS2 scoring");
   }
 
   if (scale === 1) {
@@ -46,19 +46,17 @@ function scoreSpO2(value, scale, oxygenSupport) {
     return 0;
   }
 
-  // NEWS2 Scale 2: oxygen-dependent upper thresholds.
-  if (oxygenSupport && value >= 93) {
-    if (value >= 97) return 3;
-    if (value >= 95) return 2;
-    return 1;
-  }
-
-  // Scale 2: air readings and lower saturation thresholds.
-  if (value >= 86 && value <= 87) return 1;
-  if (value >= 84 && value <= 85) return 2;
+  // RCP NEWS2 2017 Scale 2: ONLY with clinician authorization (checked
+  // by calculateNEWS2). Above 92%, high saturation is penalized only if
+  // the patient is receiving supplemental oxygen.
   if (value <= 83) return 3;
-
-  return 0;
+  if (value <= 85) return 2;
+  if (value <= 87) return 1;
+  if (value <= 92) return 0;
+  if (!oxygenSupport) return 0;
+  if (value <= 94) return 1;
+  if (value <= 96) return 2;
+  return 3;
 }
 
 function scoreSystolicBP(value) {
@@ -68,7 +66,7 @@ function scoreSystolicBP(value) {
   if (value <= 100) return 2;
   if (value <= 110) return 1;
   if (value <= 219) return 0;
-  return 3; // >= 220
+  return 3;
 }
 
 function scoreHeartRate(value) {
@@ -98,68 +96,43 @@ function scoreConsciousness(value) {
   const normalized = String(value || "").trim().toUpperCase();
   if (normalized === "ALERT") return 0;
   if (["NEW_CONFUSION", "V", "P", "U"].includes(normalized)) return 3;
-
-  throw new Error(
-    "consciousness must be ALERT, NEW_CONFUSION, V, P, or U"
-  );
+  throw new Error("consciousness must be ALERT, NEW_CONFUSION, V, P, or U");
 }
 
 function calculateNEWS2(input) {
   if (!input || typeof input !== "object") {
     throw new Error("A NEWS2 observation object is required");
   }
-
   for (const key of PARAMETERS) {
     if (input[key] === undefined || input[key] === null || input[key] === "") {
       throw new Error(`Missing required NEWS2 field: ${key}`);
     }
   }
-
   if (typeof input.oxygenSupport !== "boolean") {
     throw new Error("oxygenSupport must be true or false");
   }
-
   if (input.spo2Scale === 2 && input.scale2ClinicianAuthorized !== true) {
-    throw new Error(
-      "SpO2 Scale 2 requires explicit clinician authorization"
-    );
+    throw new Error("SpO2 Scale 2 requires explicit clinician authorization");
   }
-
   const scores = {
     respiratory_score: scoreRespiratoryRate(input.respiratoryRate),
-    spo2_score: scoreSpO2(
-      input.spo2,
-      input.spo2Scale,
-      input.oxygenSupport
-    ),
+    spo2_score: scoreSpO2(input.spo2, input.spo2Scale, input.oxygenSupport),
     oxygen_score: input.oxygenSupport ? 2 : 0,
     systolic_bp_score: scoreSystolicBP(input.systolicBP),
     heart_rate_score: scoreHeartRate(input.heartRate),
     temperature_score: scoreTemperatureCelsius(input.temperatureCelsius),
     consciousness_score: scoreConsciousness(input.consciousness),
   };
-
   const total = Object.values(scores).reduce((sum, score) => sum + score, 0);
   const highestParameterScore = Math.max(
-    scores.respiratory_score,
-    scores.spo2_score,
-    scores.systolic_bp_score,
-    scores.heart_rate_score,
-    scores.temperature_score,
-    scores.consciousness_score
+    scores.respiratory_score, scores.spo2_score, scores.systolic_bp_score,
+    scores.heart_rate_score, scores.temperature_score, scores.consciousness_score
   );
-
   let riskLevel;
-  if (total >= 7) {
-    riskLevel = "High Risk";
-  } else if (total >= 5) {
-    riskLevel = "Medium Risk";
-  } else if (highestParameterScore === 3) {
-    riskLevel = "Low-Medium Risk";
-  } else {
-    riskLevel = "Low Risk";
-  }
-
+  if (total >= 7) riskLevel = "High Risk";
+  else if (total >= 5) riskLevel = "Medium Risk";
+  else if (highestParameterScore === 3) riskLevel = "Low-Medium Risk";
+  else riskLevel = "Low Risk";
   return {
     ...scores,
     total_news2_score: total,
@@ -170,11 +143,6 @@ function calculateNEWS2(input) {
 }
 
 module.exports = {
-  calculateNEWS2,
-  scoreRespiratoryRate,
-  scoreSpO2,
-  scoreSystolicBP,
-  scoreHeartRate,
-  scoreTemperatureCelsius,
-  scoreConsciousness,
+  calculateNEWS2, scoreRespiratoryRate, scoreSpO2, scoreSystolicBP,
+  scoreHeartRate, scoreTemperatureCelsius, scoreConsciousness,
 };
