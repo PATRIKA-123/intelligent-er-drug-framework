@@ -1,10 +1,6 @@
 const fs = require("fs");
 const path = require("path");
 
-// This script lives outside backend/, so Node would not find the packages that
-// "npm install" put in backend/node_modules. Load them from the backend
-// package so there is only ONE package.json and ONE install to maintain.
-// Supported command:  cd backend && npm install && npm run import:data
 const backendRequire = require("module").createRequire(
   path.join(__dirname, "../backend/package.json")
 );
@@ -14,9 +10,7 @@ backendRequire("dotenv").config();
 const csv = backendRequire("csv-parser");
 const { Client } = backendRequire("pg");
 
-// PostgreSQL connection
 
-// PostgreSQL connection
 const client = new Client({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
@@ -30,23 +24,9 @@ const client = new Client({
 });
 
 
-const { validateAll } = require("./importValidation");
+const { validateAll, findReviewWarnings } = require("./importValidation");
 const { classifyTemperature, celsiusForDatabase } = require("./temperatureUnits");
 
-// Options:
-//   --file <path>    CSV to import (default: data/cleaned_vitals.csv)
-//   --dry-run        check the file only; never connects to the database
-//   --skip-invalid   import the valid rows and report the rejected ones
-//                    (default: if ANY row is invalid, nothing is imported)
-//   --demo-defaults  the CSV has no consciousness, oxygen-support or SpO2-scale
-//                    columns. By default they are stored as UNKNOWN (NULL).
-//                    With this flag the old demonstration values (Alert / no
-//                    oxygen / scale 1) are stored AND marked as assumed in the
-//                    *_assumed columns. Refused if those columns are missing.
-//   --accept-inferred-celsius
-//                    treat values that can only be Celsius (25-45) as Celsius
-//                    and store them, labelled INFERRED_CELSIUS. Default: they
-//                    are kept as UNVERIFIED_CELSIUS with no canonical Celsius.
 const args = process.argv.slice(2);
 const KNOWN_FLAGS = ["--file", "--dry-run", "--skip-invalid", "--accept-inferred-celsius", "--demo-defaults"];
 const fileFlagIndex = args.indexOf("--file");
@@ -65,7 +45,6 @@ const skipInvalid = args.includes("--skip-invalid");
 const acceptInferredCelsius = args.includes("--accept-inferred-celsius");
 const demoDefaults = args.includes("--demo-defaults");
 
-// CSV file path
 const csvFilePath =
   fileFlagIndex !== -1
     ? path.resolve(args[fileFlagIndex + 1])
@@ -78,7 +57,6 @@ if (!fs.existsSync(csvFilePath)) {
 
 const records = [];
 
-// Read CSV
 fs.createReadStream(csvFilePath)
   .pipe(csv())
   .on("data", (row) => {
@@ -88,7 +66,6 @@ fs.createReadStream(csvFilePath)
     console.log("CSV loaded successfully.");
     console.log(`Total records found: ${records.length}`);
 
-    // ---- Validate every row BEFORE touching the database ----
     const { validRows, problems, rejectedRowCount } = validateAll(records);
     console.log(`Valid rows: ${validRows.length}`);
     console.log(`Rejected rows: ${rejectedRowCount}`);
@@ -105,7 +82,15 @@ fs.createReadStream(csvFilePath)
       }
     }
 
-    // ---- Decide how each temperature value is interpreted (B09) ----
+    const reviewWarnings = findReviewWarnings(validRows);
+    console.log(`Values to review (stored unchanged): ${reviewWarnings.length}`);
+    for (const w of reviewWarnings.slice(0, 20)) {
+      console.log(`  stay ${w.stay_id}, ${w.timestamp}, ${w.field} = ${w.value}: ${w.reason}`);
+    }
+    console.log(
+      "Note: dates in this dataset are shifted (around year 2147) for privacy. Keep their order; do not read them as real calendar time."
+    );
+
     const statusCounts = {};
     for (const row of validRows) {
       row.tempInfo = classifyTemperature(row.temperature, { acceptInferredCelsius });
@@ -143,17 +128,12 @@ fs.createReadStream(csvFilePath)
     }
 
     try {
-      // Connect to PostgreSQL
       await client.connect();
 
       console.log("Connected to PostgreSQL.");
 
-      // Start transaction
       await client.query("BEGIN");
 
-      // =====================================================
-      // STEP 1: Insert unique patients
-      // =====================================================
 
       const uniquePatients = new Map();
 
@@ -188,9 +168,6 @@ fs.createReadStream(csvFilePath)
         `New patients inserted: ${patientsInserted}`
       );
 
-      // =====================================================
-      // STEP 2: Insert unique ED stays
-      // =====================================================
 
       const uniqueStays = new Map();
 
@@ -225,14 +202,10 @@ fs.createReadStream(csvFilePath)
         `New ED stays inserted: ${staysInserted}`
       );
 
-      // =====================================================
-      // STEP 3: Insert observations
-      // =====================================================
 
       let observationsInserted = 0;
       let observationsSkipped = 0;
 
-      // Store the unit provenance only if the migration has been applied.
       const unitColumns = [
         "temperature_source_unit",
         "temperature_unit_status",
@@ -253,7 +226,6 @@ fs.createReadStream(csvFilePath)
         );
       }
 
-      // Flags that say whether those three inputs were measured or assumed.
       const assumedColumns = [
         "consciousness_assumed",
         "oxygen_support_assumed",
@@ -270,7 +242,6 @@ fs.createReadStream(csvFilePath)
         foundAssumed.rows.some((r) => r.column_name === c)
       );
       if (demoDefaults && presentAssumed.length !== assumedColumns.length) {
-        // Never write invented clinical values without recording that they are invented.
         throw new Error(
           "--demo-defaults needs the columns " + assumedColumns.join(", ") +
             " on observations. Apply migrations/20261116_002_observation_spo2_scale_assumed.sql. Nothing was imported."
@@ -305,7 +276,6 @@ fs.createReadStream(csvFilePath)
           row.systolic_bp,
           row.data_source,
 
-          // NEWS2-related values: unknown unless demo defaults were requested
           demoDefaults ? "Alert" : null,
           demoDefaults ? false : null,
           demoDefaults ? 1 : null,
@@ -313,7 +283,6 @@ fs.createReadStream(csvFilePath)
         if (hasUnitColumns) {
           values.push(row.tempInfo.unit, row.tempInfo.status, celsiusForDatabase(row.tempInfo));
         }
-        // true only for values the importer invented; unknown (NULL) is not "assumed"
         for (const _ of presentAssumed) values.push(demoDefaults);
 
         const result = await client.query(insertSql, values);
@@ -333,9 +302,6 @@ fs.createReadStream(csvFilePath)
         `Duplicate observations skipped: ${observationsSkipped}`
       );
 
-      // =====================================================
-      // COMMIT
-      // =====================================================
 
       await client.query("COMMIT");
 
@@ -343,14 +309,12 @@ fs.createReadStream(csvFilePath)
         "Data import completed successfully! 🎉"
       );
     } catch (error) {
-      // Rollback if anything goes wrong
       await client.query("ROLLBACK");
 
       console.error("Import failed:");
       console.error(error);
       process.exitCode = 1;
     } finally {
-      // Close database connection
       await client.end();
 
       console.log("Database connection closed.");
