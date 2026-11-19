@@ -101,33 +101,94 @@ const fixture = (name, lines) => { const p = path.join(tmp, name); fs.writeFileS
       (await db.query("SELECT (SELECT count(*) FROM observations)::int o, (SELECT count(*) FROM patients)::int p, (SELECT count(*) FROM ed_stays)::int s")).rows[0],
       { o: 0, p: 0, s: 0 });
 
-    console.log("--- backfill before the migration ---");
+    console.log("--- backfill, older two-flag layout (no spo2_scale_assumed) ---");
     await addLegacy(1, 1, "Alert", false, 1, "MIMIC_IV_ED_DEMO_v2.2");
     await addLegacy(1, 2, "Alert", false, 1, "MIMIC_IV_ED_DEMO_v2.2");
     await addLegacy(1, 3, "Alert", false, 1, "MIMIC_IV_ED_DEMO_v2.2");
     await addLegacy(1, 4, "V", true, 1, "MIMIC_IV_ED_DEMO_v2.2");      // looks measured
     await addLegacy(1, 5, "Alert", false, 1, "SOME_OTHER_SOURCE");      // other source
     r = node("backfillAssumedInputs.js");
-    check("dry run reports 3 to mark and 2 unclassified",
-      [r.code, /will be marked assumed\): 3/.test(r.out), /provenance unknown\): 2/.test(r.out), /Dry run/.test(r.out)], [0, true, true, true]);
+    check("dry run reports 3 rows to update, 2 unclassified, and the missing third column",
+      [r.code, /needing at least one flag filled: 3/.test(r.out), /provenance unknown\): 2/.test(r.out), /spo2_scale_assumed column does not exist/.test(r.out), /Dry run/.test(r.out)],
+      [0, true, true, true, true]);
     check("dry run changed nothing", (await db.query("SELECT count(*)::int n FROM observations WHERE consciousness_assumed IS NOT NULL")).rows[0].n, 0);
-    r = node("backfillAssumedInputs.js", ["--apply"]);
-    check("--apply refuses until spo2_scale_assumed exists", [r.code, /spo2_scale_assumed column does not exist/.test(r.out)], [1, true]);
     r = node("backfillAssumedInputs.js", ["--nonsense"]);
     check("unknown option refused", r.code, 1);
+    r = node("backfillAssumedInputs.js", ["--apply"]);
+    check("--apply works on the two-flag layout and updates the 3 old-default rows", [r.code, /Updated 3 observations/.test(r.out)], [0, true]);
+    check("two flags set on those rows; measured-looking and other-source rows untouched",
+      (await db.query("SELECT consciousness_assumed ca, oxygen_support_assumed oa FROM observations ORDER BY observation_time")).rows.map((x) => [x.ca, x.oa]),
+      [[true, true], [true, true], [true, true], [null, null], [null, null]]);
+    r = node("backfillAssumedInputs.js", ["--apply"]);
+    check("second --apply on the two-flag layout has nothing to do", [r.code, /Nothing to update/.test(r.out)], [0, true]);
 
-    console.log("--- migration ---");
+    console.log("--- migration, then completing partly classified rows ---");
     await db.query(MIGRATION);
     await db.query(MIGRATION);
     check("migration is re-runnable", true, true);
+    // rows 1-3 now have two flags TRUE and the new third flag NULL (the Neon situation)
+    r = node("backfillAssumedInputs.js");
+    check("dry run counts rows whose two flags are already TRUE and whose third is NULL",
+      [r.code, /needing at least one flag filled: 3/.test(r.out), /spo2_scale_assumed to fill: 3/.test(r.out), /consciousness_assumed to fill: 0/.test(r.out), /oxygen_support_assumed to fill: 0/.test(r.out)],
+      [0, true, true, true, true]);
     r = node("backfillAssumedInputs.js", ["--apply"]);
-    check("--apply marks exactly the 3 old-default rows", [r.code, /Marked 3 observations as assumed/.test(r.out)], [0, true]);
-    const flags = (await db.query(`SELECT observation_time::time t, consciousness_assumed ca, oxygen_support_assumed oa, spo2_scale_assumed sa FROM observations ORDER BY observation_time`)).rows;
-    check("first 3 rows flagged, the measured-looking and other-source rows untouched",
+    check("--apply fills only the missing third flag", [r.code, /Updated 3 observations/.test(r.out)], [0, true]);
+    const flags = (await db.query(`SELECT consciousness_assumed ca, oxygen_support_assumed oa, spo2_scale_assumed sa FROM observations ORDER BY observation_time`)).rows;
+    check("all three flags TRUE on the 3 old-default rows; the other 2 rows still untouched",
       flags.map((x) => [x.ca, x.oa, x.sa]), [[true, true, true], [true, true, true], [true, true, true], [null, null, null], [null, null, null]]);
     check("the values themselves are unchanged", (await db.query("SELECT consciousness c, oxygen_support o, spo2_scale s FROM observations ORDER BY observation_time LIMIT 1")).rows[0], { c: "Alert", o: false, s: 1 });
     r = node("backfillAssumedInputs.js", ["--apply"]);
     check("second --apply has nothing to do", [r.code, /Nothing to update/.test(r.out)], [0, true]);
+
+    console.log("--- existing TRUE / FALSE flags are never overwritten ---");
+    await reset();
+    const mk = (hour, source, cons, c, o, sc) => db.query(
+      `INSERT INTO observations (stay_id, observation_time, temperature, heart_rate, respiratory_rate, spo2, systolic_bp, data_source,
+                                 consciousness, oxygen_support, spo2_scale, consciousness_assumed, oxygen_support_assumed, spo2_scale_assumed)
+       VALUES (1, $1, 98.6, 80, 18, 99, 120, $2, $3, false, 1, $4, $5, $6)`,
+      [`2147-01-01 ${String(hour).padStart(2, "0")}:00`, source, cons, c, o, sc]);
+    const DEMO = "MIMIC_IV_ED_DEMO_v2.2";
+    await mk(1, DEMO, "Alert", true, true, null);      // two TRUE, third NULL        -> third becomes TRUE
+    await mk(2, DEMO, "Alert", false, null, null);     // FALSE + two NULL            -> FALSE kept, two filled TRUE
+    await mk(3, DEMO, "Alert", false, false, null);    // two FALSE, third NULL       -> FALSE kept, third TRUE
+    await mk(4, DEMO, "Alert", true, false, false);    // complete (TRUE/FALSE/FALSE) -> not touched at all
+    await mk(5, DEMO, "Alert", null, true, true);      // first NULL, others TRUE     -> first TRUE
+    await mk(6, DEMO, "Alert", true, true, true);      // already complete            -> not touched
+    await mk(7, "SOME_OTHER_SOURCE", "Alert", true, true, null); // other source, partly set -> NOT touched
+    await mk(8, DEMO, "V", true, true, null);          // values not the old defaults  -> NOT touched
+    r = node("backfillAssumedInputs.js");
+    check("dry run: 4 rows need at least one flag; fills = 1 conscious., 1 oxygen, 3 scale... counted per flag",
+      [r.code, /needing at least one flag filled: 4/.test(r.out), /consciousness_assumed to fill: 1/.test(r.out), /oxygen_support_assumed to fill: 1/.test(r.out), /spo2_scale_assumed to fill: 3/.test(r.out)],
+      [0, true, true, true, true]);
+    check("dry run reports rows with an explicit FALSE and the 2 unclassified (other source, other values)",
+      [/explicit FALSE flag[^:]*: 3/.test(r.out), /provenance unknown\): 2/.test(r.out), /every flag already set \(left alone\): 2/.test(r.out)],
+      [true, true, true]);
+    r = node("backfillAssumedInputs.js", ["--apply"]);
+    check("--apply updates exactly the 4 rows", [r.code, /Updated 4 observations/.test(r.out)], [0, true]);
+    check("only NULL flags were filled; every existing TRUE/FALSE kept; other rows untouched",
+      (await db.query("SELECT consciousness_assumed ca, oxygen_support_assumed oa, spo2_scale_assumed sa FROM observations ORDER BY observation_time")).rows.map((x) => [x.ca, x.oa, x.sa]),
+      [[true, true, true], [false, true, true], [false, false, true], [true, false, false], [true, true, true], [true, true, true], [true, true, null], [true, true, null]]);
+    r = node("backfillAssumedInputs.js", ["--apply"]);
+    check("re-running changes nothing", [r.code, /Nothing to update/.test(r.out)], [0, true]);
+
+    console.log("--- the Neon situation: 554 rows, two flags TRUE, third column added later ---");
+    await reset();
+    await db.query(MIGRATION_DOWN);                         // back to the two-flag layout
+    await db.query(`INSERT INTO observations (stay_id, observation_time, temperature, heart_rate, respiratory_rate, spo2, systolic_bp, data_source,
+                                              consciousness, oxygen_support, spo2_scale, consciousness_assumed, oxygen_support_assumed)
+                    SELECT 1, TIMESTAMP '2147-01-01 00:00' + (g || ' minutes')::interval, 98.6, 80, 18, 99, 120, 'MIMIC_IV_ED_DEMO_v2.2',
+                           'Alert', false, 1, TRUE, TRUE FROM generate_series(1, 554) g`);
+    r = node("backfillAssumedInputs.js", ["--apply"]);
+    check("two-flag layout: nothing to update (both flags already TRUE)", [r.code, /Nothing to update/.test(r.out)], [0, true]);
+    await db.query(MIGRATION);                              // the third column now exists, all NULL
+    r = node("backfillAssumedInputs.js");
+    check("after the migration the dry run finds all 554 rows", [r.code, /needing at least one flag filled: 554/.test(r.out), /spo2_scale_assumed to fill: 554/.test(r.out)], [0, true, true]);
+    r = node("backfillAssumedInputs.js", ["--apply"]);
+    check("--apply updates all 554 rows", [r.code, /Updated 554 observations/.test(r.out)], [0, true]);
+    check("all 554 rows now have all three flags TRUE",
+      (await db.query("SELECT count(*)::int n FROM observations WHERE consciousness_assumed AND oxygen_support_assumed AND spo2_scale_assumed")).rows[0].n, 554);
+    r = node("backfillAssumedInputs.js", ["--apply"]);
+    check("a further run has nothing to do", [r.code, /Nothing to update/.test(r.out)], [0, true]);
 
     console.log("--- import after the migration ---");
     await reset();
