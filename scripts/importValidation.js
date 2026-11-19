@@ -1,9 +1,12 @@
+"use strict";
 
+// B08/B05: explicit CSV numeric contract.  The NEWS2 engine accepts only
+// whole-number SpO2 values; do not import an unscorable fractional saturation.
 const NUMERIC_VITALS = [
   { field: "temperature" },
   { field: "heart_rate" },
   { field: "respiratory_rate" },
-  { field: "spo2", max: 100, maxReason: "SpO2 cannot be above 100" },
+  { field: "spo2", max: 100, maxReason: "SpO2 cannot be above 100", integer: true },
   { field: "systolic_bp" },
 ];
 
@@ -11,7 +14,7 @@ const MAX_STORABLE = 999.99;
 const MAX_DECIMALS = 2;
 const PLAIN_NUMBER = /^-?\d+(\.\d+)?$/;
 
-function parseVital({ field, max, maxReason }, raw) {
+function parseVital({ field, max, maxReason, integer }, raw) {
   if (raw === undefined || raw === null) return { error: "value is missing" };
 
   const text = String(raw).trim();
@@ -23,6 +26,9 @@ function parseVital({ field, max, maxReason }, raw) {
   if (value <= 0) return { error: "must be greater than 0" };
   if (max !== undefined && value > max) return { error: maxReason };
   if (value > MAX_STORABLE) return { error: `too large for the database column (max ${MAX_STORABLE})` };
+  if (integer && !Number.isInteger(value)) {
+    return { error: `${field} must be a whole-number reading for NEWS2; fractional values are not silently rounded` };
+  }
 
   const decimals = (text.split(".")[1] || "").replace(/0+$/, "");
   if (decimals.length > MAX_DECIMALS) {
