@@ -1,5 +1,7 @@
 "use strict";
 const { randomUUID } = require("node:crypto");
+// B26_DURABLE_AUDIT_V1
+const { persistAuditEvent } = require('../services/durableClinicalAudit');
 
 // B26: minimal, redacted event stream for an external log collector.
 // A durable, tamper-evident audit table/retention policy is a separate DB task.
@@ -49,7 +51,12 @@ function clinicalAudit(req, res, next) {
   res.once("finish", () => {
     // Never log request URL, query, headers, JWT, request/response body or record ID.
     const e = createAuditEvent({ method: req.method, pathname, statusCode: res.statusCode, user: req.user, id });
-    if (e) console.info(JSON.stringify(e));
+    if (e) {
+      console.info(JSON.stringify(e));
+      persistAuditEvent(e).catch(err => {
+        console.error('B26 durable audit persistence failed:', err.code || 'DB_ERROR');
+      });
+    }
   });
   next();
 }
