@@ -1,3 +1,4 @@
+// ROUND2_E_ADAPTER_V1
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import Button from "../components/Button";
@@ -46,7 +47,7 @@ export default function PatientHome() {
   if (st.loading) return <Loading label="Loading your visits" />;
   if (st.error) return <ErrorState error={st.error} onRetry={load} />;
   const { profile, visits } = st.data;
-  const active = visits.flatMap((v) => v.prescriptions.filter((p) => p.active !== false).map((p) => ({ ...p, visit: v })));
+  const active = visits.flatMap((v) => v.prescriptions.filter((p) => p.active === true).map((p) => ({ ...p, visit: v })));
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -57,6 +58,7 @@ export default function PatientHome() {
         <Button to="/patient/add">Add a visit</Button>
       </div>
 
+      {visits.some(v => v.prescriptions.some(p => p.active == null)) && <p role="status" className="rounded-2xl bg-lavender px-4 py-3 text-sm">Medication activity is not verified for some prescriptions. Ask your clinician before relying on this list.</p>}
       {active.length > 0 && (
         <section className="rounded-panel bg-mint p-6">
           <h2 className="m-0 mb-3 text-xl font-semibold tracking-tight">Active medicines</h2>

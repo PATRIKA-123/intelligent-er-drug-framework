@@ -1,3 +1,4 @@
+// ROUND2_E_ADAPTER_V1
 // Thin fetch wrapper: adds the token, turns errors into ApiError,
 // and tells the app to sign out when the backend says 401 (token expired).
 
@@ -20,11 +21,16 @@ export function configureClient({ tokenGetter, unauthorizedHandler }) {
   onUnauthorized = unauthorizedHandler;
 }
 
-export async function request(path, { method = "GET", body } = {}) {
+export async function request(path, { method = "GET", body, extraHeaders = {} } = {}) {
   const headers = { Accept: "application/json" };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
+  for (const [key, value] of Object.entries(extraHeaders)) {
+    if (key !== "Idempotency-Key") throw new Error("Unsupported request header");
+    if (typeof value !== "string" || !/^[a-zA-Z0-9_-]{8,128}$/.test(value)) throw new Error("Invalid idempotency key");
+    headers[key] = value;
+  }
 
   let res;
   try {

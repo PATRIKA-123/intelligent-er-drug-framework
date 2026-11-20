@@ -1,13 +1,14 @@
+// ROUND2_E_ADAPTER_V1
 import { useState } from "react";
-import { useNavigate } from "react-router";
 import { api, USE_MOCK } from "../api";
 import Button from "../components/Button";
 import Icon from "../components/Icon";
 
 export default function AddVisit() {
-  const navigate = useNavigate();
+  // Claim submissions are pending verification, not immediately visible visits.
   const [f, setF] = useState({ stay_id: "", access_code: "", phone_last4: "" });
   const [err, setErr] = useState("");
+  const [pending, setPending] = useState(false);
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
 
@@ -20,7 +21,8 @@ export default function AddVisit() {
     setBusy(true);
     try {
       await api.claimVisit({ stay_id: f.stay_id.trim(), access_code: f.access_code.trim(), phone_last4: f.phone_last4.trim() });
-      navigate("/patient", { replace: true });
+      setPending(true);
+      setF({ stay_id: '', access_code: '', phone_last4: '' });
     } catch (x) {
       setErr(x.message);
     } finally { setBusy(false); }
@@ -46,6 +48,7 @@ export default function AddVisit() {
           <input id="av-phone" inputMode="numeric" maxLength={4} className="field w-40" value={f.phone_last4} onChange={set("phone_last4")} autoComplete="off" />
           <span className="text-xs text-muted">The phone number you gave at the ER desk</span>
         </div>
+        {pending && <p role="status" className="m-0 rounded-2xl bg-lavender p-4 text-sm">Claim received. Your visit will appear after identity verification by authorized staff. Do not submit the code again.</p>}
         {err && <p role="alert" className="m-0 flex items-center gap-2 text-sm font-medium text-risk-high-bg"><Icon name="alert" size={16} color="#C62828" /> {err}</p>}
         <Button type="submit" disabled={busy} className="h-14 text-base">{busy ? "Checking..." : "Add this visit"}</Button>
       </form>

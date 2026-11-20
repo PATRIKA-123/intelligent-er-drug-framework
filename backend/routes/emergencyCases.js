@@ -126,6 +126,49 @@ if (textError) {
   }
 );
 
+// ROUND2_T8_CASE_QUEUE: all counts and rows scoped server-side, not UI-filtered.
+router.get('/', authMiddleware, authMiddleware.requireRole('PARAMEDIC','ER_STAFF','ADMIN','DOCTOR'), async (req,res)=>{
+  const allowed=['PRE_ER','ARRIVED_ER','ACTIVE_ER','CLOSED'];
+  const status=req.query.status;
+  if(status!==undefined&&!allowed.includes(status))return res.status(400).json({error:'Invalid case status',code:'BAD_REQUEST'});
+  const digits=(v)=>typeof v==='string'&&/^\d+$/.test(v)&&Number.isSafeInteger(Number(v));
+  if(req.query.limit!==undefined&&!digits(req.query.limit))return res.status(400).json({error:'Invalid limit',code:'BAD_REQUEST'});
+  if(req.query.offset!==undefined&&!digits(req.query.offset))return res.status(400).json({error:'Invalid offset',code:'BAD_REQUEST'});
+  const limit=req.query.limit===undefined?50:Number(req.query.limit);
+  const offset=req.query.offset===undefined?0:Number(req.query.offset);
+  if(limit<1||limit>100||offset>1000000)return res.status(400).json({error:'Invalid pagination',code:'BAD_REQUEST'});
+  const role=req.user.role;
+  const who=req.user.user_id;
+  try {
+    const filter=`WHERE ($1::text IS NULL OR c.case_status = $1)
+      AND ( $2::text IN ('ADMIN','ER_STAFF')
+         OR ($2='PARAMEDIC' AND c.created_by=$3)
+         OR ($2='DOCTOR' AND EXISTS (
+           SELECT 1 FROM stay_doctor_assignments a
+           WHERE a.stay_id=c.stay_id AND a.doctor_user_id=$3
+             AND a.status='ACTIVE' AND a.ended_at IS NULL)))`;
+    const params=[status??null,role,who];
+    const count=await pool.query(`SELECT COUNT(*)::integer AS total FROM emergency_cases c ${filter}`,params);
+    const data=await pool.query(`SELECT c.case_id,c.temporary_case_code,c.case_status,c.stay_id,c.created_at,
+        a.chief_complaint,
+        CASE WHEN n.total_news2_score IS NULL THEN NULL ELSE
+          json_build_object('total_news2_score',n.total_news2_score,'risk_level',n.risk_level) END AS latest_news2,
+        CASE WHEN t.transport_id IS NULL THEN NULL ELSE
+          json_build_object('transport_status',t.transport_status,'ambulance_id',t.ambulance_id,
+                            'destination_hospital',t.destination_hospital) END AS transport
+      FROM emergency_cases c
+      LEFT JOIN LATERAL (SELECT chief_complaint FROM pre_er_assessments
+                        WHERE case_id=c.case_id ORDER BY assessment_time DESC NULLS LAST,assessment_id DESC LIMIT 1) a ON TRUE
+      LEFT JOIN LATERAL (SELECT total_news2_score,risk_level FROM news2_results_real
+                        WHERE stay_id=c.stay_id ORDER BY observation_time DESC NULLS LAST,observation_id DESC LIMIT 1) n ON TRUE
+      LEFT JOIN LATERAL (SELECT transport_id,transport_status,ambulance_id,destination_hospital
+                        FROM ambulance_transports WHERE case_id=c.case_id
+                        ORDER BY created_at DESC NULLS LAST,transport_id DESC LIMIT 1) t ON TRUE
+      ${filter} ORDER BY c.created_at DESC,c.case_id DESC LIMIT $4 OFFSET $5`, [...params,limit,offset]);
+    return res.status(200).json({count:data.rows.length,total:count.rows[0].total,cases:data.rows});
+  }catch(err){console.error('Case queue failed:',err.code||'DB_ERROR');return res.status(500).json({error:'Failed to list cases',code:'INTERNAL_ERROR'});}
+});
+
 // GET /api/emergency-cases/:id
 // Returns one emergency case by case_id.
 // Any authenticated user may view the case.

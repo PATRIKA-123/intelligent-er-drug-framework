@@ -1,7 +1,7 @@
 # T1 to T3: staff accounts, doctor list, re-invite and delete
 
 ## Deploy order (important)
-1. Run `migrations/20261120_005_staff_profiles.sql` on Neon. It is safe to run twice.
+1. Run `migrations/20261120_008_staff_profiles.sql` on Neon. It is safe to run twice.
    Do this BEFORE the new code goes live: the invitation check now reads `staff_profiles`.
    (If another migration already uses number 005, rename this file; the SQL does not depend on the number.)
 2. Make sure `FRONTEND_URL`, `GMAIL_USER` and `GMAIL_APP_PASSWORD` are set on Render (T2).

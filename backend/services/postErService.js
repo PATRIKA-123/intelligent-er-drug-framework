@@ -28,6 +28,9 @@ async function getPostErData(stayId, options = {}) {
     [stayId]
   );
 
+  // ROUND2_C_DEPARTED_AT: expose actual departure separately from authorization.
+  const departureResult = await pool.query('SELECT departed_at FROM ed_stays WHERE stay_id = $1',[stayId]);
+  if(dischargeResult.rows[0] && departureResult.rows[0]) dischargeResult.rows[0].departed_at = departureResult.rows[0].departed_at;
   const followUpsResult = await pool.query(
     `SELECT follow_up_id, follow_up_date, follow_up_type,
             department, provider_name, status, notes, created_at
@@ -88,7 +91,7 @@ async function getAssignedDoctor(stayId) {
   return result.rows[0] || null;
 }
 
-async function assignDoctorToStay(stayId, doctorUserId, assignedBy, notes) {
+async function assignDoctorToStay(stayId, doctorUserId, assignedBy, notes, replace = false) {
   const client = await pool.connect();
 
   try {
@@ -138,12 +141,19 @@ async function assignDoctorToStay(stayId, doctorUserId, assignedBy, notes) {
       [stayId]
     );
 
+    // ROUND2_T4_REPLACE: stay lock above serializes concurrent assignments.
     if (existing.rows.length > 0) {
-      const error = new Error(
-        "An active doctor is already assigned to this stay"
+      if (!replace) {
+        const error = new Error('An active doctor is already assigned to this stay');
+        error.statusCode = 409;
+        throw error;
+      }
+      await client.query(
+        `UPDATE stay_doctor_assignments
+           SET status = 'REPLACED', ended_at = NOW(), replaced_at = NOW(), replaced_by = $2
+           WHERE stay_id = $1 AND status = 'ACTIVE'`,
+        [stayId, assignedBy]
       );
-      error.statusCode = 409;
-      throw error;
     }
 
     const result = await client.query(
@@ -265,6 +275,8 @@ async function createDischarge(stayId, data) {
       ]
     );
 
+    // ROUND2_C_DISCHARGE_ATOMIC: discharge authorized, not physically departed.
+    await client.query("UPDATE ed_stays SET visit_status = 'DISCHARGE_AUTHORIZED' WHERE stay_id = $1 AND visit_status <> 'DEPARTED'",[stayId]);
     await client.query("COMMIT");
     return result.rows[0];
 

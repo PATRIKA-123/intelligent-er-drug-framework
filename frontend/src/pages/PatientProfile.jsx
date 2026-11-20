@@ -1,3 +1,4 @@
+// ROUND2_E_ADAPTER_V1
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import Button from "../components/Button";
@@ -45,7 +46,7 @@ export default function PatientProfile() {
     e.preventDefault();
     setMsg(null); setBusy(true);
     try {
-      await api.updateMyProfile({ full_name: f.full_name, phone: f.phone, email: f.email, share: f.share, emergency_contact: { name: f.ec_name, phone: f.ec_phone } });
+      await api.updateMyProfile({ full_name: f.full_name, phone: f.phone, email: f.email, share: f.share, emergency_contact: f.ec_name.trim() || f.ec_phone.trim() ? { name: f.ec_name, phone: f.ec_phone } : null });
       setMsg({ ok: "Saved." });
     } catch (x) { setMsg({ error: x.message }); } finally { setBusy(false); }
   }

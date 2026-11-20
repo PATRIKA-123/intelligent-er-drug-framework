@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+// ROUND2_E_ADAPTER_V1
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../api";
 import Button from "./Button";
@@ -13,6 +14,8 @@ export function RegisterVisit({ c, onDone }) {
   const [doctor, setDoctor] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // Keep one key across retries; never duplicate a visit after timeout.
+  const requestKey = useRef(null);
 
   useEffect(() => {
     let live = true;
@@ -29,7 +32,10 @@ export function RegisterVisit({ c, onDone }) {
     try {
       const body = { ...form, chief_complaint: complaint.trim() };
       if (doctor) body.doctor_user_id = doctor;
-      onDone(await api.registerVisit(c.case_id, body));
+      requestKey.current ||= crypto.randomUUID();
+      const result = await api.registerVisit(c.case_id, body, requestKey.current);
+      requestKey.current = null;
+      await onDone(result);
     } catch (x) {
       setErr(x.message);
     } finally { setBusy(false); }
@@ -73,7 +79,7 @@ export function Slip({ slip }) {
           <div className="whitespace-nowrap text-2xl font-semibold tracking-widest">{slip.access_code}</div>
         </div>
       </div>
-      <p className="m-0 text-sm">Give this slip to the patient. They add the visit to their profile with the visit ID, the access code and the last 4 digits of their phone.</p>
+      <p className="m-0 text-sm">Give this slip to the patient. Their access code and phone digits submit a claim for identity verification; the visit is added only after authorized staff approval. Keep this code private.</p>
       {slip.linked_profile && <p role="status" className="m-0 rounded-2xl bg-risk-low-bg px-4 py-3 text-sm font-medium text-risk-low-fg">Added to the profile of {slip.linked_profile}.</p>}
       {slip.phone_missing && <p role="status" className="m-0 rounded-2xl bg-risk-lowmed-bg px-4 py-3 text-sm text-[#3F2700]">No phone number was recorded, so the patient cannot add this visit yet. Add it on the visit page.</p>}
       <div className="flex flex-wrap gap-3">
