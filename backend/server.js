@@ -26,6 +26,7 @@ const preErRoutes = require("./routes/preEr");
 const clinicalPermissionsRoutes = require("./routes/clinicalPermissions");
 const postErRoutes = require("./routes/postEr");
 const doctorsRoutes = require("./routes/doctors");
+const staffRoutes = require("./routes/staff");
 let allowedOrigins;
 try { allowedOrigins = parseAllowedOrigins(process.env); }
 catch (error) {
@@ -74,6 +75,7 @@ app.use("/api/decision-support", decisionSupportRoutes);
 app.use("/api/clinical-permissions", clinicalPermissionsRoutes);
 app.use("/api/post-er", postErRoutes);
 app.use("/api/doctors", doctorsRoutes);
+app.use("/api/staff", staffRoutes);
 app.use((req, res) => res.status(404).json({ error: "API endpoint not found", code: "NOT_FOUND" }));
 app.use(apiErrorHandler);
 const PORT = process.env.PORT || 5000;

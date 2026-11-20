@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const pool = require("../db");
 const authMiddleware = require("../middleware/authMiddleware");
 const { sendEmail } = require("../utils/mailer");
+const inv = require("../services/invitationService");
 
 const router = express.Router();
 router.post("/validate-invitation", async (req, res) => {
@@ -27,15 +28,17 @@ router.post("/validate-invitation", async (req, res) => {
       .digest("hex");
 
     const result = await pool.query(
-      `SELECT dp.full_name, di.expires_at
+      `SELECT COALESCE(dp.full_name, sp.full_name, u.username) AS full_name,
+              u.role, di.expires_at
        FROM doctor_invitations di
        JOIN users u ON u.user_id = di.user_id
-       JOIN doctor_profiles dp ON dp.user_id = u.user_id
+       LEFT JOIN doctor_profiles dp ON dp.user_id = u.user_id
+       LEFT JOIN staff_profiles sp ON sp.user_id = u.user_id
        WHERE di.token_hash = $1
          AND di.expires_at > NOW()
          AND di.accepted_at IS NULL
          AND di.revoked_at IS NULL
-         AND u.role = 'DOCTOR'
+         AND u.role IN ('DOCTOR', 'PARAMEDIC', 'ER_STAFF')
          AND u.is_active = FALSE`,
       [tokenHash]
     );
@@ -49,7 +52,11 @@ router.post("/validate-invitation", async (req, res) => {
 
     return res.status(200).json({
       valid: true,
+      // doctor_name kept so existing clients keep working; full_name and role
+      // are the general names for doctors, paramedics and ER staff.
       doctor_name: result.rows[0].full_name,
+      full_name: result.rows[0].full_name,
+      role: result.rows[0].role,
       expires_at: result.rows[0].expires_at
     });
 
@@ -120,13 +127,13 @@ router.post("/accept-invitation", async (req, res) => {
 
     const invitation = invitationResult.rows[0];
 
-    // Activate the doctor and set their password.
+    // Activate the account (doctor, paramedic or ER staff) and set the password.
     const userResult = await client.query(
       `UPDATE users
        SET password_hash = $1,
            is_active = TRUE
        WHERE user_id = $2
-         AND role = 'DOCTOR'
+         AND role IN ('DOCTOR', 'PARAMEDIC', 'ER_STAFF')
          AND is_active = FALSE
        RETURNING user_id, username, email, role, is_active`,
       [passwordHash, invitation.user_id]
@@ -136,7 +143,7 @@ router.post("/accept-invitation", async (req, res) => {
       await client.query("ROLLBACK");
 
       return res.status(400).json({
-        error: "Doctor account is invalid or already activated"
+        error: "Account is invalid or already activated"
       });
     }
 
@@ -152,7 +159,8 @@ router.post("/accept-invitation", async (req, res) => {
 
     return res.status(200).json({
       message: "Invitation accepted. You can now log in.",
-      doctor: userResult.rows[0]
+      doctor: userResult.rows[0], // kept for existing clients
+      user: userResult.rows[0]
     });
 
   } catch (error) {
@@ -176,6 +184,48 @@ router.post("/accept-invitation", async (req, res) => {
     }
   }
 });
+
+// T3: list of doctors. ADMIN sees every doctor with a status; ER_STAFF sees
+// only active doctors (used to assign a doctor to a visit).
+router.get(
+  "/",
+  authMiddleware,
+  authMiddleware.requireRole("ADMIN", "ER_STAFF"),
+  async (req, res) => {
+    try {
+      const isAdmin = req.user.role === "ADMIN";
+      const result = await pool.query(
+        `SELECT u.user_id, u.username, u.email, dp.full_name, dp.qualification,
+                dp.specialization,
+                CASE
+                  WHEN u.is_active THEN 'ACTIVE'
+                  WHEN EXISTS (
+                    SELECT 1 FROM doctor_invitations di
+                    WHERE di.user_id = u.user_id
+                      AND di.accepted_at IS NULL AND di.revoked_at IS NULL
+                      AND di.expires_at > NOW()
+                  ) THEN 'PENDING'
+                  ELSE 'EXPIRED'
+                END AS status
+         FROM users u
+         JOIN doctor_profiles dp ON dp.user_id = u.user_id
+         WHERE u.role = 'DOCTOR'
+           AND ($1::boolean OR u.is_active = TRUE)
+         ORDER BY dp.full_name`,
+        [isAdmin]
+      );
+
+      const doctors = result.rows.map((row) => {
+        const { email, ...rest } = row;
+        return isAdmin ? { ...rest, email } : rest; // only admins see email addresses
+      });
+      return res.json({ doctors });
+    } catch (error) {
+      console.error("Doctor list error:", error.message);
+      return res.status(500).json({ error: "Failed to list doctors" });
+    }
+  }
+);
 
 // 3. Authentication middleware
 router.use(authMiddleware);
@@ -208,21 +258,6 @@ router.use(async (req, res, next) => {
     });
   }
 });
-
-// Escape user-provided text before inserting it into email HTML.
-const escapeHtml = (value) => {
-  return String(value).replace(/[&<>"']/g, (character) => {
-    const entities = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;"
-    };
-
-    return entities[character];
-  });
-};
 
 // POST /api/doctors
 // Create a pending doctor account and send an invitation email.
@@ -458,45 +493,17 @@ router.post("/", async (req, res) => {
     invitationUrl.searchParams.set("token", invitationToken);
 
     // Send invitation email.
-    const safeDoctorName = escapeHtml(cleanFullName);
-
     try {
+      const message = inv.invitationEmail({
+        fullName: cleanFullName,
+        role: "DOCTOR",
+        url: invitationUrl.toString()
+      });
+
       await sendEmail({
         to: cleanEmail,
-        subject: "Doctor Invitation - Intelligent ER-Drug Framework",
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
-            <h2>Welcome to Intelligent ER-Drug Framework</h2>
-
-            <p>Hello Dr. ${safeDoctorName},</p>
-
-            <p>
-              An administrator has invited you to join
-              Intelligent ER-Drug Framework as a doctor.
-            </p>
-
-            <p>
-              Click the button below to accept your invitation
-              and create your password.
-            </p>
-
-            <p style="margin: 30px 0;">
-              <a
-                href="${invitationUrl.toString()}"
-                style="background: #2563eb; color: white; padding: 12px 20px;
-                text-decoration: none; border-radius: 5px;"
-              >
-                Accept Invitation
-              </a>
-            </p>
-
-            <p>This invitation expires in 24 hours and can only be used once.</p>
-
-            <p>If you were not expecting this invitation, you can ignore this email.</p>
-
-            <p>Regards,<br>Intelligent ER-Drug Framework Team</p>
-          </div>
-        `
+        subject: message.subject,
+        html: message.html
       });
     } catch (emailError) {
       // Revoke the invitation if email delivery fails.
@@ -545,6 +552,156 @@ router.post("/", async (req, res) => {
     if (client) {
       client.release();
     }
+  }
+});
+
+// POST /api/doctors/:user_id/resend-invitation  (T3)
+// For a doctor who has not accepted yet: revoke old invitations, send a new
+// one, and optionally correct a mistyped email address.
+router.post("/:user_id/resend-invitation", async (req, res) => {
+  const userId = inv.parseUserId(req.params.user_id);
+  if (userId === null) {
+    return res.status(400).json({ error: "user_id must be a positive whole number" });
+  }
+
+  const newEmail = req.body && req.body.email;
+  if (newEmail !== undefined) {
+    const problem = inv.validateEmail(newEmail, "doctor email address");
+    if (problem) return res.status(400).json({ error: problem });
+  }
+
+  const { base, error: urlError } = inv.getInvitationBaseUrl();
+  if (urlError) return res.status(500).json({ error: urlError });
+
+  let client;
+  let inTransaction = false;
+  try {
+    client = await pool.connect();
+    await client.query("BEGIN");
+    inTransaction = true;
+
+    const found = await client.query(
+      `SELECT u.user_id, u.email, u.is_active, dp.full_name
+       FROM users u
+       JOIN doctor_profiles dp ON dp.user_id = u.user_id
+       WHERE u.user_id = $1 AND u.role = 'DOCTOR'
+       FOR UPDATE OF u`,
+      [userId]
+    );
+    if (found.rows.length === 0) {
+      await client.query("ROLLBACK");
+      inTransaction = false;
+      return res.status(404).json({ error: "Doctor not found" });
+    }
+    const doctor = found.rows[0];
+    if (doctor.is_active) {
+      await client.query("ROLLBACK");
+      inTransaction = false;
+      return res.status(409).json({ error: "This doctor account is already active" });
+    }
+
+    const email = newEmail !== undefined ? newEmail.trim().toLowerCase() : doctor.email;
+    if (email !== doctor.email) {
+      await client.query(`UPDATE users SET email = $1 WHERE user_id = $2`, [email, userId]);
+    }
+
+    await inv.revokeOpenInvitationsForUser(client, userId);
+    const { token, invitationId } = await inv.createInvitation(client, userId, req.user.user_id);
+    await client.query("COMMIT");
+    inTransaction = false;
+
+    const message = inv.invitationEmail({
+      fullName: doctor.full_name,
+      role: "DOCTOR",
+      url: inv.buildInvitationUrl(base, token)
+    });
+    try {
+      await sendEmail({ to: email, subject: message.subject, html: message.html });
+    } catch (emailError) {
+      await pool.query(
+        `UPDATE doctor_invitations SET revoked_at = NOW() WHERE invitation_id = $1`,
+        [invitationId]
+      );
+      console.error("Doctor invitation email error:", emailError.message);
+      return res.status(502).json({
+        error: "A new invitation was created, but the email could not be sent.",
+        user_id: userId
+      });
+    }
+
+    return res.status(200).json({ message: "New invitation sent", user_id: userId });
+  } catch (error) {
+    if (client && inTransaction) {
+      try { await client.query("ROLLBACK"); } catch (e) { console.error("Rollback error:", e.message); }
+    }
+    if (error.code === "23505") {
+      return res.status(409).json({ error: "That email address is already used by another account" });
+    }
+    console.error("Doctor resend error:", error.message);
+    return res.status(500).json({ error: "Failed to resend invitation" });
+  } finally {
+    if (client) client.release();
+  }
+});
+
+// DELETE /api/doctors/:user_id  (T3)
+// Only for a doctor who never accepted the invitation. Frees the username.
+router.delete("/:user_id", async (req, res) => {
+  const userId = inv.parseUserId(req.params.user_id);
+  if (userId === null) {
+    return res.status(400).json({ error: "user_id must be a positive whole number" });
+  }
+
+  let client;
+  let inTransaction = false;
+  try {
+    client = await pool.connect();
+    await client.query("BEGIN");
+    inTransaction = true;
+
+    const found = await client.query(
+      `SELECT user_id, is_active FROM users
+       WHERE user_id = $1 AND role = 'DOCTOR'
+       FOR UPDATE`,
+      [userId]
+    );
+    if (found.rows.length === 0) {
+      await client.query("ROLLBACK");
+      inTransaction = false;
+      return res.status(404).json({ error: "Doctor not found" });
+    }
+    if (found.rows[0].is_active) {
+      await client.query("ROLLBACK");
+      inTransaction = false;
+      return res.status(409).json({ error: "Only a doctor who never accepted the invitation can be deleted" });
+    }
+    const accepted = await client.query(
+      `SELECT 1 FROM doctor_invitations WHERE user_id = $1 AND accepted_at IS NOT NULL LIMIT 1`,
+      [userId]
+    );
+    if (accepted.rows.length > 0) {
+      await client.query("ROLLBACK");
+      inTransaction = false;
+      return res.status(409).json({ error: "This account has already been used and cannot be deleted" });
+    }
+
+    await client.query(`DELETE FROM doctor_invitations WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM doctor_profiles WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM users WHERE user_id = $1`, [userId]);
+    await client.query("COMMIT");
+    inTransaction = false;
+    return res.status(200).json({ message: "Doctor account deleted" });
+  } catch (error) {
+    if (client && inTransaction) {
+      try { await client.query("ROLLBACK"); } catch (e) { console.error("Rollback error:", e.message); }
+    }
+    if (error.code === "23503") {
+      return res.status(409).json({ error: "This account is referenced by other records and cannot be deleted" });
+    }
+    console.error("Doctor delete error:", error.message);
+    return res.status(500).json({ error: "Failed to delete doctor" });
+  } finally {
+    if (client) client.release();
   }
 });
 
