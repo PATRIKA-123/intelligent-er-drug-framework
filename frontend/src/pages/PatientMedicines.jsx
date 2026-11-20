@@ -1,3 +1,4 @@
+// ROUND2_E_ADAPTER_V1
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import SelfList from "../components/SelfList";
@@ -25,7 +26,8 @@ export default function PatientMedicines() {
   if (st.loading) return <Loading label="Loading your medicines" />;
   if (st.error) return <ErrorState error={st.error} onRetry={load} />;
   const all = st.visits.flatMap((v) => v.prescriptions);
-  const active = all.filter((p) => p.active !== false);
+  const active = all.filter((p) => p.active === true);
+  const unknown = all.filter((p) => p.active == null);
   const earlier = all.filter((p) => p.active === false);
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
@@ -37,6 +39,13 @@ export default function PatientMedicines() {
         <h2 className="m-0 mb-3 text-xl font-semibold tracking-tight">Active from visits</h2>
         {active.length === 0 ? <p className="m-0 text-sm">Nothing active right now.</p> : <ul className="m-0 flex list-none flex-col gap-2 p-0">{active.map((p) => <Rx key={p.prescription_id} p={p} />)}</ul>}
       </section>
+      {unknown.length > 0 && (
+        <section className="panel p-6!">
+          <h2 className="m-0 mb-3 text-xl font-semibold">Activity not verified</h2>
+          <p className="text-sm text-muted">Do not assume these medicines are currently active. Confirm with your clinician.</p>
+          <ul className="m-0 flex flex-col gap-2 p-0 list-none">{unknown.map(p => <Rx key={p.prescription_id} p={p} />)}</ul>
+        </section>
+      )}
       {earlier.length > 0 && (
         <section className="panel p-6!">
           <h2 className="m-0 mb-3 text-xl font-semibold tracking-tight">Earlier</h2>

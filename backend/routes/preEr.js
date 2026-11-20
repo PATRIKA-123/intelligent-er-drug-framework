@@ -1137,103 +1137,8 @@ router.post(
       await client.query("BEGIN");
       transactionStarted = true;
 
-      const caseResult = await client.query(
-        `SELECT case_id, patient_id, stay_id, temporary_case_code, case_status, source, created_by, created_at
-         FROM emergency_cases
-         WHERE case_id = $1
-         FOR UPDATE`,
-        [caseId]
-      );
-
-      if (caseResult.rows.length === 0) {
-        await client.query("ROLLBACK");
-        transactionStarted = false;
-        return res.status(404).json({ error: "Emergency case not found" });
-      }
-
-      const existingCase = caseResult.rows[0];
-      if (existingCase.stay_id && String(existingCase.stay_id) !== String(stayId)) {
-        await client.query("ROLLBACK");
-        transactionStarted = false;
-        return res.status(409).json({ error: "Emergency case is already linked to a different ER stay" });
-      }
-
-      const stayLinkResult = await client.query(
-        `SELECT case_id
-         FROM emergency_cases
-         WHERE stay_id = $1 AND case_id <> $2
-         FOR UPDATE`,
-        [stayId, caseId]
-      );
-      if (stayLinkResult.rows.length > 0) {
-        await client.query("ROLLBACK");
-        transactionStarted = false;
-        return res.status(409).json({ error: "ER stay is already linked to another emergency case" });
-      }
-
-      if (!existingCase.stay_id && existingCase.case_status !== "PRE_ER") {
-        await client.query("ROLLBACK");
-        transactionStarted = false;
-        return res.status(409).json({ error: `Cannot link an ER stay while case status is ${existingCase.case_status}` });
-      }
-
-      const stayResult = await client.query(
-        `SELECT e.stay_id, p.patient_id
-         FROM ed_stays e
-         JOIN patients p ON p.subject_id = e.subject_id
-         WHERE e.stay_id = $1
-         FOR SHARE OF e`,
-        [stayId]
-      );
-
-      if (stayResult.rows.length === 0) {
-        await client.query("ROLLBACK");
-        transactionStarted = false;
-        return res.status(404).json({ error: "ED stay or linked patient not found" });
-      }
-
-      const erPatientId = stayResult.rows[0].patient_id;
-      if (
-        existingCase.patient_id !== null &&
-        String(existingCase.patient_id) !== String(erPatientId)
-      ) {
-        await client.query("ROLLBACK");
-        transactionStarted = false;
-        return res.status(409).json({ error: "Emergency case patient does not match the ER stay patient" });
-      }
-
-      
-const updated = await client.query(
-  `UPDATE emergency_cases
-   SET patient_id = $1,
-       stay_id = $2,
-       case_status = CASE
-         WHEN case_status = 'PRE_ER' THEN 'ARRIVED_ER'
-         ELSE case_status
-       END
-   WHERE case_id = $3
-   RETURNING case_id, patient_id, stay_id, temporary_case_code, case_status, source, created_by, created_at`,
-  [erPatientId, stayId, caseId]
-);
-
-linkedCase = updated.rows[0];
- 
-
-const transportResult = await client.query(
-  `UPDATE ambulance_transports
-   SET transport_status = 'ARRIVED_AT_DESTINATION',
-       arrival_time = COALESCE(arrival_time, CURRENT_TIMESTAMP)
-   WHERE transport_id = (
-     SELECT transport_id
-     FROM ambulance_transports
-     WHERE case_id = $1
-       AND transport_status != 'CANCELLED'
-     ORDER BY created_at DESC, transport_id DESC
-     LIMIT 1
-   )
-   RETURNING transport_id, case_id, transport_status, arrival_time`,
-  [caseId]
-);
+      // ROUND2_B2_SHARED_LINK: one transactional linking policy for both routes.
+      linkedCase = await require('../services/round2Registration').linkCaseToStay(client,caseId,stayId);
 
       await client.query("COMMIT");
       transactionStarted = false;
@@ -1246,6 +1151,8 @@ const transportResult = await client.query(
         }
       }
 
+      if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+
       // Two requests tried to link different cases to the same stay at the same
       // time; the database's unique stay_id constraint let only one win.
       if (err.code === "23505") {
@@ -1253,7 +1160,7 @@ const transportResult = await client.query(
       }
 
       console.error("Error linking ER arrival:", err.message);
-      return res.status(500).json({ error: "Failed to link ER arrival" });
+      return res.status(202).json({ error: "Failed to link ER arrival" });
     } finally {
       if (client) client.release();
     }
@@ -1269,7 +1176,7 @@ const transportResult = await client.query(
       );
 
       if (!context) {
-        return res.status(500).json({
+        return res.status(202).json({
           message: "ER stay linked, but clinical processing could not load the linked stay.",
           case_linked: true,
           retry_safe: true,
@@ -1295,7 +1202,7 @@ const transportResult = await client.query(
 
       const processing = await generateAndPersistAlerts(stayId);
       if (!processing) {
-        return res.status(500).json({
+        return res.status(202).json({
           message: "ER stay linked, but the ER processing service returned no result.",
           case_linked: true,
           retry_safe: true,
@@ -1340,7 +1247,7 @@ const transportResult = await client.query(
       }
 
       console.error("ER clinical processing failed after linkage:", err.message);
-      return res.status(500).json({
+      return res.status(202).json({
         message: "ER stay linked, but ER clinical processing failed.",
         case_linked: true,
         retry_safe: true,

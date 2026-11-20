@@ -1,3 +1,4 @@
+// ROUND2_E_ADAPTER_V1
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api } from "../api";
@@ -33,7 +34,7 @@ export default function ParamedicHome() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="m-0 text-[40px] font-semibold leading-none tracking-tight md:text-5xl">My cases</h1>
-          <p className="mt-2.5 text-[15px] text-muted">Cases you started or opened on this device.</p>
+          <p className="mt-2.5 text-[15px] text-muted">Cases available to your account.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <form onSubmit={open} className="flex items-center gap-2">

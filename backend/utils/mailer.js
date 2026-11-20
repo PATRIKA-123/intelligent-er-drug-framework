@@ -25,7 +25,7 @@ const sendEmail = async ({ to, subject, html }) => {
   }
 
   return await transporter.sendMail({
-    from: `"Intelligent ER-Drug Framework" <${process.env.GMAIL_USER}>`,
+    from: `"Parvah" <${process.env.GMAIL_USER}>`,
     to,
     subject,
     html

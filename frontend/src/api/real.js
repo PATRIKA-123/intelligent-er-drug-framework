@@ -1,8 +1,9 @@
+// ROUND2_E_ADAPTER_V1
 // Calls the real backend. Paths and response shapes come from reading the
 // backend code (see the contract report). Fields marked "needs backend" in
 // mock.js are not returned by the real API yet.
-import { request, ApiError } from "./client.js";
-import { rememberCase, rememberedCases } from "../lib/myCases.js";
+import { request } from "./client.js";
+import { rememberCase } from "../lib/myCases.js";
 
 export const real = {
   // Auth
@@ -10,27 +11,8 @@ export const real = {
     request("/auth/login", { method: "POST", body: { username, password } }),
 
   // ER stays
-  // The stays list has no latest NEWS2 yet, so fill it from each stay's summary
-  // (max 20 stays). Remove this once the backend adds it to the list.
-  listStays: async () => {
-    const data = await request("/stays");
-    const stays = data.stays || [];
-    await Promise.all(
-      stays.map(async (s) => {
-        if (s.latest_news2) return;
-        try {
-          const sum = await request(`/clinical-summary/${s.stay_id}`);
-          s.latest_news2 = sum.latest_news2 || null;
-          s.latest_observation = sum.latest_observation || null;
-          if (sum.stay?.case_status) s.case_status = sum.stay.case_status;
-          if (sum.stay?.case_code) s.case_code = sum.stay.case_code;
-        } catch {
-          /* leave this row unscored */
-        }
-      })
-    );
-    return { ...data, stays };
-  },
+  // Board API already returns scoped latest NEWS2 and observation data.
+  listStays: () => request('/stays?limit=100'),
   // Assigned doctor, follow-ups, prescriptions and discharge for a stay.
   // The server has no "list doctors" route yet; the screen falls back to typing a doctor ID.
   listDoctors: async () => { const r = await request("/doctors"); return r.doctors || r; },
@@ -59,28 +41,47 @@ export const real = {
 
   // Admin
   createDoctor: (body) => request("/doctors", { method: "POST", body }),
-  // The server can only create doctors so far; ER staff and paramedic accounts are not supported yet.
-  createStaff: async (role, body) => {
-    if (role === "DOCTOR") return real.createDoctor(body);
-    throw new ApiError(501, "The server cannot create ER staff or paramedic accounts yet.");
+  createStaff: (role, body) => role === 'DOCTOR'
+    ? real.createDoctor(body)
+    : request('/staff', { method: 'POST', body: { ...body, role } }),
+  listFollowUps: async () => { const r = await request('/post-er/follow-ups'); return r.follow_ups || []; },
+  listPendingReviews: async () => { const r = await request('/post-er/prescriptions?status=PENDING_REVIEW'); return r.prescriptions || []; },
+  registerPatient: (body) => request('/patient/register', { method: 'POST', body }),
+  listMyVisits: async () => {
+    const r = await request('/patient/me');
+    return { ...r, profile: { ...r.profile, share: r.profile?.share ?? r.profile?.share_history,
+      dob: r.profile?.dob ?? r.profile?.date_of_birth }, visits: r.visits || [] };
   },
-  // No endpoint lists these across visits yet; the panels explain that instead of guessing.
-  listFollowUps: async () => { throw new ApiError(501, "The server cannot list follow-ups across visits yet."); },
-  listPendingReviews: async () => { throw new ApiError(501, "The server cannot list medicines waiting for review yet."); },
-  // Patient profile and the ER desk's registration: the server has none of these yet, so each says so plainly.
-  registerPatient: async () => { throw new ApiError(501, "The server cannot create patient profiles yet."); },
-  listMyVisits: async () => { throw new ApiError(501, "The server cannot show patient visits yet."); },
-  claimVisit: async () => { throw new ApiError(501, "The server cannot add visits to a profile yet."); },
-  registerVisit: async () => { throw new ApiError(501, "The server cannot register new ER visits yet. Use \"Link to an existing visit\" below."); },
-  listMyHealth: async () => { throw new ApiError(501, "The server cannot store your allergies and medicines yet."); },
-  addMyHealthItem: async () => { throw new ApiError(501, "The server cannot store your allergies and medicines yet."); },
-  removeMyHealthItem: async () => { throw new ApiError(501, "The server cannot store your allergies and medicines yet."); },
-  updateMyProfile: async () => { throw new ApiError(501, "The server cannot save profile changes yet."); },
-  changeMyPassword: async () => { throw new ApiError(501, "The server cannot change passwords for patients yet."); },
-  newAccessCode: async () => { throw new ApiError(501, "The server cannot make access codes yet."); },
-  getPatientDetails: async () => { throw new ApiError(501, "The server does not store patient details yet."); },
-  updatePatientDetails: async () => { throw new ApiError(501, "The server does not store patient details yet."); },
-  getPatientHistory: async () => { throw new ApiError(501, "The server has no patient history yet."); },
+  // The server returns 202 for a pending claim; review is required before visits are visible.
+  claimVisit: (body) => request('/patient/claim-visit', { method: 'POST', body }),
+  listClaimRequests: async () => { const r = await request('/patient/claim-requests'); return r.requests || []; },
+  registerVisit: (caseId, body, idempotencyKey) => {
+    if (!idempotencyKey) throw new Error('An idempotency key is required for visit registration');
+    const patient = { full_name: body.patient_name, date_of_birth: body.dob || undefined,
+      phone: body.phone || undefined, email: body.email || undefined };
+    return request('/stays', { method: 'POST',
+      body: { case_id: Number(caseId), patient, chiefcomplaint: body.chief_complaint,
+        ...(body.doctor_user_id ? { doctor_user_id: Number(body.doctor_user_id) } : {}) },
+      extraHeaders: { 'Idempotency-Key': idempotencyKey } });
+  },
+  listMyHealth: () => request('/patient/health'),
+  addMyHealthItem: (kind, body) => {
+    if (!['allergies', 'medications', 'conditions'].includes(kind)) throw new Error('Unknown health list');
+    const key = kind === 'allergies' ? 'reaction' : kind === 'medications' ? 'dose' : 'note';
+    return request('/patient/' + kind, { method: 'POST', body: { name: body.name, [key]: body[key] ?? body.extra ?? '' } });
+  },
+  removeMyHealthItem: (kind, id) => {
+    if (!['allergies', 'medications', 'conditions'].includes(kind)) throw new Error('Unknown health list');
+    return request('/patient/' + kind + '/' + encodeURIComponent(String(id)), { method: 'DELETE' });
+  },
+  updateMyProfile: (body) => request('/patient/profile', { method: 'PATCH', body }),
+  changeMyPassword: (body) => request('/patient/password', { method: 'POST', body }),
+  newAccessCode: (stayId) => request('/stays/' + encodeURIComponent(String(stayId)) + '/access-code', { method: 'POST', body: {} }),
+  getPatientDetails: (stayId) => request('/stays/' + encodeURIComponent(String(stayId)) + '/patient-details'),
+  updatePatientDetails: (stayId, body) => request('/stays/' + encodeURIComponent(String(stayId)) + '/patient-details', { method: 'PATCH', body }),
+  getPatientHistory: (stayId) => request('/stays/' + encodeURIComponent(String(stayId)) + '/patient-history'),
+  listIdentityReviews: async () => { const r = await request('/admin/identity-reviews'); return r.reviews || []; },
+  reviewIdentity: (reviewId, body) => request('/admin/identity-reviews/' + encodeURIComponent(String(reviewId)) + '/decision', { method: 'POST', body }),
   // Public (no sign-in): the doctor opens the emailed link.
   validateInvitation: (token) => request("/doctors/validate-invitation", { method: "POST", body: { token } }),
   acceptInvitation: (token, password) => request("/doctors/accept-invitation", { method: "POST", body: { token, password } }),
@@ -110,12 +111,15 @@ export const real = {
     request(`/emergency-cases/${caseId}/transport`, { method: "PATCH", body: { transport_status } }),
   markArrived: (caseId, stayId) =>
     request(`/emergency-cases/${caseId}/er-arrival`, { method: "POST", body: { stay_id: Number(stayId) } }),
-  // The backend has no "list my cases" endpoint yet, so this lists the cases
-  // created or opened on this device. Replace when the backend adds one.
   listCases: async () => {
-    const results = await Promise.allSettled(rememberedCases().map((id) => real.getCase(id)));
-    const cases = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
-    return { count: cases.length, cases };
+    const r = await request('/emergency-cases?limit=100');
+    return { count: r.count ?? (r.cases || []).length, cases: (r.cases || []).map(c => ({
+      ...c, status: c.case_status || c.status,
+      latest_assessment: c.chief_complaint ? { chief_complaint: c.chief_complaint } : null,
+      news2: c.latest_news2 ? {complete: true, ...c.latest_news2} : {complete: false},
+      steps: { assessment: Boolean(c.chief_complaint), vitals: Boolean(c.latest_news2),
+        transport: Boolean(c.transport), handover: c.transport?.transport_status === 'HANDOVER_COMPLETE' },
+    })) };
   },
 };
 

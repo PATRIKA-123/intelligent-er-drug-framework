@@ -38,7 +38,7 @@ function validateStayId(req, res, next) {
 // POST: Assign a doctor to an ER stay (ADMIN only)
 router.post(
   "/:stay_id/assign-doctor",
-  requireAdmin,
+  requireErStaff,
   validateStayId,
   async (req, res) => {
     try {
@@ -60,12 +60,18 @@ router.post(
           error: "notes cannot exceed 1000 characters",
         });
       }
+      // ROUND2_T4_ASSIGN: strict opt-in for replacement.
+      if (req.body?.replace !== undefined && typeof req.body.replace !== 'boolean') {
+        return res.status(400).json({ error: 'replace must be a boolean' });
+      }
+
 
       const assignment = await assignDoctorToStay(
         req.stayId,
         doctorUserId,
         req.user.user_id,
-        notes
+        notes,
+        req.body?.replace === true
       );
 
       return res.status(201).json({

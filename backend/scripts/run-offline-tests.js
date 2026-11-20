@@ -18,6 +18,7 @@ const FILES = [
   "test-post-er-prescription-privacy.js",
   "test-case-status-race.js",
   "test-post-er-invariants.js",
+  "test-staff-invitations.js",
   "test-import-validation.js",
   "test-temperature-units.js",
   "test-import-outliers.js",

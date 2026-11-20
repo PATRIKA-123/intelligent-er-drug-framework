@@ -16,6 +16,8 @@ const { ALLOWED_METHODS, ALLOWED_HEADERS, parseAllowedOrigins,
 const { apiErrorContract, apiErrorHandler } = require("./middleware/apiErrorContract");
 const { clinicalAudit } = require("./middleware/clinicalAudit");
 const pool = require("./db");
+const round2PatientRoutes = require('./routes/round2Patient');
+const round2IdentityRoutes = require('./routes/round2Identity');
 const staysRoutes = require("./routes/stays");
 const authRoutes = require("./routes/auth");
 const emergencyCasesRoutes = require("./routes/emergencyCases");
@@ -26,6 +28,7 @@ const preErRoutes = require("./routes/preEr");
 const clinicalPermissionsRoutes = require("./routes/clinicalPermissions");
 const postErRoutes = require("./routes/postEr");
 const doctorsRoutes = require("./routes/doctors");
+const staffRoutes = require("./routes/staff");
 let allowedOrigins;
 try { allowedOrigins = parseAllowedOrigins(process.env); }
 catch (error) {
@@ -64,6 +67,18 @@ app.get("/api/health", async (_req, res) => {
     res.status(503).json({ status: "error", message: "Database is unavailable" });
   }
 });
+// ROUND2_B2_ROUTES: registration before read-only stays, patient directory as separate route.
+app.use("/api/patients", require("./routes/patients"));
+app.use("/api/stays", require("./routes/visitRegistration"));
+// ROUND2_C_ROUTES: scoped board before standard stay routes.
+app.use("/api/stays", require("./routes/round2Board"));
+app.use("/api/stays", require("./routes/round2Vitals").router);
+app.use("/api/stays", require("./routes/round2Departure"));
+app.use("/api/post-er", require("./routes/round2PostEr"));
+app.use("/api/alerts", require("./routes/round2Alerts"));
+app.use('/api/patient', round2PatientRoutes);
+app.use('/api/stays', round2IdentityRoutes.stayRouter);
+app.use('/api/admin', round2IdentityRoutes.adminRouter);
 app.use("/api/stays", staysRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/emergency-cases", emergencyCasesRoutes);
@@ -74,6 +89,7 @@ app.use("/api/decision-support", decisionSupportRoutes);
 app.use("/api/clinical-permissions", clinicalPermissionsRoutes);
 app.use("/api/post-er", postErRoutes);
 app.use("/api/doctors", doctorsRoutes);
+app.use("/api/staff", staffRoutes);
 app.use((req, res) => res.status(404).json({ error: "API endpoint not found", code: "NOT_FOUND" }));
 app.use(apiErrorHandler);
 const PORT = process.env.PORT || 5000;

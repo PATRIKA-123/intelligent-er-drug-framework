@@ -57,10 +57,8 @@ async function canAccessStay(user, stayId, options = {}) {
   if (user.role === "PATIENT") {
     const r = await pool.query(
       `SELECT 1
-       FROM users u
-       JOIN patients p ON p.patient_id = u.patient_id
-       JOIN ed_stays s ON s.subject_id = p.subject_id
-       WHERE u.user_id = $1 AND s.stay_id = $2
+       FROM public.patient_visit_access a
+       WHERE a.user_id = $1 AND a.stay_id = $2
        LIMIT 1`,
       [user.user_id, stayId]
     );
@@ -163,10 +161,9 @@ async function stayListFilter(user) {
       return { clause: "TRUE", params: [] };
     case "PATIENT":
       return {
-        clause: `s.subject_id IN (
-                   SELECT p.subject_id FROM users u
-                   JOIN patients p ON p.patient_id = u.patient_id
-                   WHERE u.user_id = $1)`,
+        clause: `s.stay_id IN (
+                   SELECT a.stay_id FROM public.patient_visit_access a
+                   WHERE a.user_id = $1)`,
         params: [user.user_id],
       };
     case "PARAMEDIC":

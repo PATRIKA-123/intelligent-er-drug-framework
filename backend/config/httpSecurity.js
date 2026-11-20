@@ -4,7 +4,7 @@
 // separate from Express so it is unit-testable without a database.
 const LOCAL_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"];
 const ALLOWED_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
-const ALLOWED_HEADERS = ["Authorization", "Content-Type"];
+const ALLOWED_HEADERS = ["Authorization", "Content-Type", "Idempotency-Key"];
 
 function parseAllowedOrigins(env = process.env) {
   const production = env.NODE_ENV === "production";
