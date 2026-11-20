@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// Baseline restore ONLY into a new, empty, disposable PostgreSQL 18+ test DB.
+// Baseline restore ONLY into a new, empty, disposable PostgreSQL test DB at least as new as the export.
 const fs = require('node:fs');
 const path = require('node:path');
 const cp = require('node:child_process');
@@ -21,6 +21,16 @@ function preflight(e,apply){
   return errors;
 }
 function inventory(sql){return new Set([...sql.matchAll(/CREATE\s+TABLE\s+(?:public\.)?([a-z][\w]*)\s*\(/gi)].map(x=>x[1].toLowerCase()));}
+function validateServerVersion(sql,serverVersionNum,serverVersion){
+  const match=sql.match(/^-- Dumped from database version (\d+)\.(\d+)/m);
+  if(!match)throw Error('Could not determine PostgreSQL source version from schema-export.sql');
+  const sourceMajor=Number(match[1]);
+  const sourceMinor=Number(match[2]);
+  const sourceVersionNum=sourceMajor*10000+sourceMinor;
+  const sourceVersion=`${sourceMajor}.${sourceMinor}`;
+  if(sourceVersionNum<180000)throw Error(`Schema export is from PostgreSQL ${sourceVersion}; require PostgreSQL 18 or newer`);
+  if(serverVersionNum<sourceVersionNum)throw Error(`Schema export is from PostgreSQL ${sourceVersion}; require PostgreSQL ${sourceVersion} or newer (connected server is ${serverVersion})`);
+}
 async function run(){
   const errors=preflight(process.env,process.argv.includes('--apply'));
   if(errors.length)throw Error('SAFETY STOP: '+errors.join('; '));
@@ -32,9 +42,9 @@ async function run(){
   const client=new pg.Client({host:process.env.DB_HOST,port:process.env.DB_PORT||5432,database:process.env.DB_NAME,user:process.env.DB_USER,password:process.env.DB_PASSWORD,ssl:process.env.DB_SSL==='true'?{rejectUnauthorized:false}:false});
   try{
     await client.connect();
-    const info=(await client.query("SELECT current_database() AS name, current_setting('server_version_num')::int AS version")).rows[0];
+    const info=(await client.query("SELECT current_database() AS name, current_setting('server_version_num')::int AS version, current_setting('server_version') AS server_version")).rows[0];
     if(info.name!==process.env.PRE_ER_TEST_DATABASE_NAME)throw Error('Connected to unexpected database');
-    if(info.version<180000)throw Error('Export was taken from PostgreSQL 18; require PostgreSQL 18+ disposable DB');
+    validateServerVersion(sql,info.version,info.server_version);
     const exists=(await client.query("SELECT 1 FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') AND table_type='BASE TABLE' LIMIT 1")).rowCount;
     if(exists)throw Error('Database is not empty; refusing any changes');
     console.log('Restoring complete schema-only baseline into EMPTY test database:',info.name);
@@ -51,4 +61,4 @@ async function run(){
   }finally{await client.end().catch(()=>{});}
 }
 if(require.main===module)run().catch(e=>{console.error(e.message);process.exitCode=1;});
-module.exports={preflight,inventory,REQUIRED};
+module.exports={preflight,inventory,validateServerVersion,REQUIRED};
