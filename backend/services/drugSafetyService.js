@@ -80,12 +80,8 @@ async function persistDrugSafetyResults(
       }
     }
 
-    // Replace this stay's current snapshot inside the active transaction.
-    const deleteResult = await client.query(
-      `DELETE FROM drug_safety_results
-       WHERE stay_id = $1`,
-      [stayId]
-    );
+    // B22_APPEND_ONLY_DRUG: retain drug-safety results from previous engine runs.
+    const deleteResult = { rowCount: 0 };
 
     let insertedRows = [];
 

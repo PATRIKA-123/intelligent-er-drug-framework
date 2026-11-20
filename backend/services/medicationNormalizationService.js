@@ -52,24 +52,27 @@ async function getNormalizedMedications(stayId, options = {}) {
   const ids = medications.map(m => m.medication_id);
   // Do NOT use DISTINCT ON: it hides contradictory mapping rows.
   const canonical = await pool.query(
-    `SELECT mapping_id, medication_id, canonical_name, mapping_status
+    `SELECT mapping_id, medication_id, canonical_name, mapping_status, mapping_version, created_at
      FROM canonical_medication_map
      WHERE medication_id = ANY($1::int[]) ORDER BY medication_id, mapping_id`, [ids]
   );
   const component = await pool.query(
-    `SELECT component_id, medication_id, component_name, component_canonical_name, mapping_status
+    `SELECT component_id, medication_id, component_name, component_canonical_name, mapping_status, mapping_version, created_at
      FROM medication_components
      WHERE medication_id = ANY($1::int[]) ORDER BY medication_id, component_id`, [ids]
   );
   const directById = groupByMedication(canonical.rows);
   const componentsById = groupByMedication(component.rows);
   const mapped = [], unmapped = [], identities = new Set(), sources = [];
-  const markMapped = (med, name, source, componentOf, rowId) => {
+  const markMapped = (med, name, source, componentOf, rowId, mappingRow) => {
     mapped.push({ medication_id: med.medication_id, medication_name: name,
       canonical_name: source.canonical, source: source.type, component_of: componentOf });
     identities.add(source.canonical);
     sources.push({ medication_id: med.medication_id, table: source.table, row_id: rowId,
-      mapping_version: null });
+      // B14_VERSIONED_PROVENANCE: NULL explicitly means legacy/unversioned.
+      mapping_version: mappingRow.mapping_version ?? null,
+      version_status: mappingRow.mapping_version ? 'VERSIONED' : 'LEGACY_UNVERSIONED',
+      mapping_created_at: mappingRow.created_at ?? null });
   };
 
   for (const med of medications) {
@@ -81,12 +84,13 @@ async function getNormalizedMedications(stayId, options = {}) {
     if (direct.length) {
       const first = direct[0];
       const same = direct.every(r => normalized(r.canonical_name) === normalized(first.canonical_name)
-        && normalized(r.mapping_status) === normalized(first.mapping_status));
+        && normalized(r.mapping_status) === normalized(first.mapping_status)
+        && (r.mapping_version ?? null) === (first.mapping_version ?? null));
       if (!same) throw mappingError("conflicting canonical mappings", id);
       if (normalized(first.mapping_status) === "mapped" && normalized(first.canonical_name)) {
         markMapped(med, med.medication_name, {
           type: "DIRECT", table: "canonical_medication_map", canonical: first.canonical_name.trim()
-        }, null, first.mapping_id);
+        }, null, first.mapping_id, first);
       } else {
         unmapped.push({ medication_id: med.medication_id, medication_name: med.medication_name,
           reason: `Mapping status is ${first.mapping_status || "UNKNOWN"}, not MAPPED` });
@@ -104,13 +108,14 @@ async function getNormalizedMedications(stayId, options = {}) {
       for (const rows of byIngredient.values()) {
         const first = rows[0];
         if (!rows.every(r => normalized(r.component_canonical_name) === normalized(first.component_canonical_name)
-          && normalized(r.mapping_status) === normalized(first.mapping_status))) {
+          && normalized(r.mapping_status) === normalized(first.mapping_status)
+          && (r.mapping_version ?? null) === (first.mapping_version ?? null))) {
           throw mappingError("conflicting ingredient mappings", id);
         }
         if (normalized(first.mapping_status) === "mapped" && normalized(first.component_canonical_name)) {
           markMapped(med, first.component_name, {
             type: "COMPONENT", table: "medication_components", canonical: first.component_canonical_name.trim()
-          }, med.medication_name, first.component_id);
+          }, med.medication_name, first.component_id, first);
         } else {
           unmapped.push({ medication_id: med.medication_id,
             medication_name: `${first.component_name} (component of ${med.medication_name})`,

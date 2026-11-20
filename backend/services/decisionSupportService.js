@@ -85,7 +85,8 @@ async function computeAndPersistDecisionSupport(stayId, options = {}) {
       if (ownsTransaction) await client.query("ROLLBACK");
       return null;
     }
-    const deleteResult = await client.query("DELETE FROM decision_support_results WHERE stay_id = $1", [stayId]);
+    // B22_APPEND_ONLY_DECISION: previous decision runs remain immutable history.
+    const deleteResult = { rowCount: 0 };
     const insertResult = await client.query(
       `INSERT INTO decision_support_results
          (patient_id, stay_id, news2_score, news2_category,

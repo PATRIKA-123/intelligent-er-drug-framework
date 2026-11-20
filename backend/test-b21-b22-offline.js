@@ -61,8 +61,8 @@ test('B22: a shared run identifier and engine version are propagated',()=>{
   assert.match(decision,/engine_run_id, engine_version/);
   assert.match(drug,/engine_run_id, engine_version/);
 });
-test('B22: remaining gap is explicit, not represented as solved',()=>{
-  assert.match(alerts,/DELETE FROM clinical_alerts WHERE stay_id/);
-  assert.match(decision,/DELETE FROM decision_support_results WHERE stay_id/);
-  assert.match(drug,/DELETE FROM drug_safety_results/);
+test('B22: screening reruns preserve previous results',()=>{
+  assert.doesNotMatch(alerts,/DELETE FROM clinical_alerts WHERE stay_id/);
+  assert.doesNotMatch(decision,/DELETE FROM decision_support_results WHERE stay_id/);
+  assert.doesNotMatch(drug,/DELETE FROM drug_safety_results/);
 });

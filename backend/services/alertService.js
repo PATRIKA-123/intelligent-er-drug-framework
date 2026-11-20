@@ -1,5 +1,6 @@
 const { randomUUID } = require("crypto");
 const pool = require("../db");
+const screeningLedger = require("./screeningRunLedger");
 const {
   computeAndPersistDecisionSupport, 
 } = require("./decisionSupportService");
@@ -173,7 +174,16 @@ const engineVersion = "phase6-v1";
     return null;
   }
 
-  const client = await pool.connect();
+    // B13: durable RUNNING row is committed independently of clinical transaction.
+  await screeningLedger.beginRun(stayId, engineRunId, engineVersion);
+  let runRecorded = true;
+  let client;
+  try { client = await pool.connect(); }
+  catch (err) {
+    try { await screeningLedger.failRun(engineRunId, err); }
+    catch (ledgerErr) { console.error("B13 run ledger failure:", ledgerErr.message); }
+    throw err;
+  }
   let transactionStarted = false;
 
   try {
@@ -195,11 +205,8 @@ const engineVersion = "phase6-v1";
       throw busy;
     }
 
-    // Delete old alerts first because they reference safety-result rows.
-    const preDeleteResult = await client.query(
-      `DELETE FROM clinical_alerts WHERE stay_id = $1`,
-      [stayId]
-    );
+    // B22_APPEND_ONLY_ALERT: preserve alerts from previous runs.
+    const preDeleteResult = { rowCount: 0 };
 
     // Persist decision support and drug safety using the same transaction.
    const decisionResult = await computeAndPersistDecisionSupport(stayId, {
@@ -225,8 +232,7 @@ if (!decisionResult) {
          safety_result_id,
          interaction_level
        FROM drug_safety_results
-       WHERE stay_id = $1`,
-      [stayId]
+       WHERE stay_id = $1 AND engine_run_id = $2`, [stayId, engineRunId]
     );
 
     const alertRows = [
@@ -327,11 +333,16 @@ if (!decisionResult) {
       insertedRows = insertResult.rows;
     }
 
-    // One commit for all writes.
+        // B13_ATOMIC_COMPLETION: commit the success ledger update WITH clinical results.
+    // The separate RUNNING row remains available if the clinical transaction rolls back.
+    const drugCount = Number(decisionResult.drug_safety?.inserted_count || 0);
+    await screeningLedger.finishRun(engineRunId,
+      drugCount + insertedRows.length > 0 ? "COMPLETE_FINDINGS" : "COMPLETE_ZERO_FINDINGS",
+      drugCount, insertedRows.length, client);
     await client.query("COMMIT");
     transactionStarted = false;
+    runRecorded = false;
 
-    
 return {
   stay_id: stayId,
   decision: decisionResult.decision,
@@ -353,6 +364,10 @@ return {
       }
     }
 
+        if (runRecorded) {
+      try { await screeningLedger.failRun(engineRunId, err); }
+      catch (ledgerErr) { console.error("B13 run ledger failure:", ledgerErr.message); }
+    }
     throw err;
   } finally {
     client.release();

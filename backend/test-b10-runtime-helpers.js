@@ -1,0 +1,5 @@
+"use strict";
+function isLoopback(value){const x=String(value??'').toLowerCase().trim().replace(/^\[/,'').replace(/\]$/,'').replace(/\/(?:128|32)$/,'');return ['::1','127.0.0.1','::ffff:127.0.0.1','localhost'].includes(x)}
+function validateLocalEnv(e){const errs=[];if(e.DB_NAME!=='intelligent_er_drug_test')errs.push('DB_NAME must be intelligent_er_drug_test');if(e.PRE_ER_TEST_DATABASE_NAME!==e.DB_NAME)errs.push('PRE_ER_TEST_DATABASE_NAME mismatch');if(!isLoopback(e.DB_HOST))errs.push('DB_HOST not loopback');if(e.DB_SSL==='true')errs.push('SSL remote connection forbidden');if(e.NODE_ENV==='production')errs.push('production forbidden');if(!e.DB_USER||!e.DB_PASSWORD)errs.push('local DB credentials missing');return errs}
+function classify(row){const flags=['consciousness_assumed','oxygen_support_assumed','spo2_scale_assumed'].map(k=>row[k]);return {assumed:flags.some(x=>x===true)?true:flags.every(x=>x===false)?false:null,missing:['consciousness_missing','oxygen_support_missing','spo2_scale_missing'].some(k=>row[k]===true)}}
+module.exports={isLoopback,validateLocalEnv,classify};
