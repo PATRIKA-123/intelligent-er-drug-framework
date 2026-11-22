@@ -1,64 +1,74 @@
 "use strict";
 
-// HTTPS transactional email transport for Render Free (SMTP ports are blocked).
-// Requires RESEND_API_KEY and RESEND_FROM_EMAIL on the backend.
-const API_URL = "https://api.resend.com/emails";
+// PARVAH transactional mail transport via Brevo HTTPS API.
+// This module intentionally preserves the existing mailer exports used by
+// doctors.js and staff.js. No SMTP ports or additional npm packages needed.
+
+const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
 
 function config() {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM_EMAIL;
-  if (!apiKey || !from) {
-    throw new Error("RESEND_API_KEY and RESEND_FROM_EMAIL must be configured");
+  const apiKey = process.env.BREVO_API_KEY?.trim();
+  const senderEmail = process.env.BREVO_SENDER_EMAIL?.trim();
+  const senderName = process.env.BREVO_SENDER_NAME?.trim() || "Parvah";
+  if (!apiKey || !senderEmail) {
+    throw new Error("Brevo email configuration missing: BREVO_API_KEY or BREVO_SENDER_EMAIL");
   }
-  return { apiKey, from };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(senderEmail)) {
+    throw new Error("BREVO_SENDER_EMAIL is invalid");
+  }
+  return { apiKey, senderEmail, senderName };
 }
 
-async function requestResend(path, options) {
-  const { apiKey } = config();
-  let response;
-  try {
-    response = await fetch(`https://api.resend.com${path}`, {
-      ...options,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        ...(options?.headers || {}),
-      },
-      signal: AbortSignal.timeout(15000),
-    });
-  } catch (error) {
-    throw new Error(error.name === "TimeoutError"
-      ? "Resend HTTPS request timed out"
-      : "Resend HTTPS request failed");
-  }
-
-  let body;
-  try { body = await response.json(); }
-  catch { body = {}; }
-
-  if (!response.ok) {
-    // Do not log or expose invitation tokens, provider credentials, or email body.
-    const code = typeof body?.name === "string" ? ` (${body.name})` : "";
-    throw new Error(`Resend API rejected request: HTTP ${response.status}${code}`);
-  }
-  return body;
+// Checks local configuration. It does NOT claim that Brevo has approved
+// transactional sending or that an actual message can be delivered.
+async function verifyEmailConnection() {
+  config();
+  return true;
 }
 
 async function sendEmail({ to, subject, html }) {
-  const { from } = config();
-  const result = await requestResend("/emails", {
-    method: "POST",
-    body: JSON.stringify({ from, to: [to], subject, html }),
-  });
-  if (!result?.id) throw new Error("Resend returned no email identifier");
-  return result;
-}
+  const { apiKey, senderEmail, senderName } = config();
+  if (typeof to !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim())) {
+    throw new Error("Invalid invitation recipient email");
+  }
+  if (typeof subject !== "string" || !subject.trim() || typeof html !== "string" || !html.trim()) {
+    throw new Error("Email subject and HTML content are required");
+  }
 
-// Keep the existing exported function name for compatibility.
-// This checks API authentication over HTTPS, not inbox delivery.
-async function verifyEmailConnection() {
-  await requestResend("/domains", { method: "GET" });
-  return true;
+  let response;
+  try {
+    response = await fetch(BREVO_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "api-key": apiKey,
+        "accept": "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email: to.trim() }],
+        subject,
+        htmlContent: html,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (error) {
+    // Don't log API keys or invitation tokens.
+    throw new Error(`Brevo HTTPS request failed (${error.name === "TimeoutError" ? "timeout" : "network error"})`);
+  }
+
+  if (!response.ok) {
+    let code = "unknown";
+    try {
+      const result = await response.json();
+      if (typeof result?.code === "string" && /^[A-Za-z0-9_-]{1,60}$/.test(result.code)) code = result.code;
+    } catch { /* Brevo may return a non-JSON error */ }
+    throw new Error(`Brevo API rejected email: HTTP ${response.status} (${code})`);
+  }
+
+  // HTTP 201 means Brevo accepted the request, not necessarily delivered.
+  const result = await response.json().catch(() => ({}));
+  return { messageId: result.messageId || null, accepted: [to.trim()] };
 }
 
 module.exports = { sendEmail, verifyEmailConnection };
