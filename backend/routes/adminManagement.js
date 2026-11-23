@@ -41,6 +41,7 @@ router.get('/users', async (req, res) => {
       FROM users u LEFT JOIN doctor_profiles dp ON dp.user_id=u.user_id
       LEFT JOIN staff_profiles sp ON sp.user_id=u.user_id
       LEFT JOIN patient_profiles pp ON pp.user_id=u.user_id
+      WHERE u.archived_at IS NULL
       ORDER BY u.created_at DESC NULLS LAST,u.user_id DESC LIMIT 1000`);
     res.json({ users: r.rows });
   } catch (e) { fail(res, e, 'Failed to load users'); }
@@ -199,7 +200,7 @@ router.get('/summary', async (_req,res)=>{
      COUNT(*) FILTER(WHERE role='DOCTOR')::int AS doctors,
      COUNT(*) FILTER(WHERE role='ER_STAFF')::int AS er_staff,
      COUNT(*) FILTER(WHERE role='PARAMEDIC')::int AS paramedics,
-     COUNT(*) FILTER(WHERE role='PATIENT')::int AS patients FROM public.users`),
+     COUNT(*) FILTER(WHERE role='PATIENT')::int AS patients FROM public.users WHERE archived_at IS NULL`),
    pool.query(`SELECT COUNT(*) FILTER(WHERE accepted_at IS NOT NULL)::int AS accepted,
      COUNT(*) FILTER(WHERE accepted_at IS NULL AND revoked_at IS NULL AND expires_at>NOW())::int AS pending,
      COUNT(*) FILTER(WHERE accepted_at IS NULL AND (revoked_at IS NOT NULL OR expires_at<=NOW()))::int AS other FROM public.doctor_invitations`),
