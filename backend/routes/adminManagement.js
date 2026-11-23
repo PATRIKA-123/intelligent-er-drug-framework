@@ -117,7 +117,7 @@ router.get('/operations', async (req,res)=>{
         LEFT JOIN staff_profiles sp ON sp.user_id=c.created_by
         LEFT JOIN LATERAL (SELECT chief_complaint FROM pre_er_assessments
           WHERE case_id=c.case_id ORDER BY assessment_time DESC NULLS LAST,assessment_id DESC LIMIT 1) a ON TRUE
-        WHERE c.case_status<>'CLOSED' ORDER BY c.created_at DESC LIMIT 1000`),
+        ORDER BY c.created_at DESC LIMIT 1000`),
       pool.query(`SELECT s.stay_id,s.intime,s.visit_status,s.chiefcomplaint,s.acuity,
         p.full_name AS patient_name, p.subject_id,
         d.doctor_user_id,d.full_name AS doctor_name,d.specialization,
