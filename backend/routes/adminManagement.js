@@ -117,7 +117,7 @@ router.get('/operations', async (req,res)=>{
         LEFT JOIN staff_profiles sp ON sp.user_id=c.created_by
         LEFT JOIN LATERAL (SELECT chief_complaint FROM pre_er_assessments
           WHERE case_id=c.case_id ORDER BY assessment_time DESC NULLS LAST,assessment_id DESC LIMIT 1) a ON TRUE
-        WHERE c.case_status<>'CLOSED' ORDER BY c.created_at DESC LIMIT 300`),
+        WHERE c.case_status<>'CLOSED' ORDER BY c.created_at DESC LIMIT 1000`),
       pool.query(`SELECT s.stay_id,s.intime,s.visit_status,s.chiefcomplaint,s.acuity,
         p.full_name AS patient_name, p.subject_id,
         d.doctor_user_id,d.full_name AS doctor_name,d.specialization,
@@ -130,7 +130,7 @@ router.get('/operations', async (req,res)=>{
         LEFT JOIN LATERAL (SELECT case_id,case_status,temporary_case_code FROM emergency_cases
           WHERE stay_id=s.stay_id ORDER BY created_at DESC,case_id DESC LIMIT 1) ec ON TRUE
         WHERE s.visit_status IS NULL OR s.visit_status<>'DEPARTED'
-        ORDER BY s.intime DESC NULLS LAST LIMIT 300`)
+        ORDER BY s.intime DESC NULLS LAST LIMIT 1000`)
     ]);
     res.json({cases:cases.rows,stays:stays.rows});
   }catch(e){fail(res,e,'Failed to load operational overview');}
@@ -190,5 +190,29 @@ publicRouter.post('/complete-reset',async(req,res)=>{
     await audit(c,null,'PASSWORD_RESET_COMPLETED','USER',item.user_id,'One-time reset link');
     await c.query('COMMIT');res.json({message:'Password changed successfully. Please sign in.'});
   }catch(e){await c.query('ROLLBACK').catch(()=>{});fail(res,e,'Unable to reset password');}finally{c.release();}
+});
+// Aggregate analytics use COUNT queries, not truncated operational lists.
+router.get('/summary', async (_req,res)=>{
+ try{
+  const [users, invites, cases, stays]=await Promise.all([
+   pool.query(`SELECT COUNT(*)::int AS total,COUNT(*) FILTER(WHERE is_active)::int AS active,
+     COUNT(*) FILTER(WHERE role='DOCTOR')::int AS doctors,
+     COUNT(*) FILTER(WHERE role='ER_STAFF')::int AS er_staff,
+     COUNT(*) FILTER(WHERE role='PARAMEDIC')::int AS paramedics,
+     COUNT(*) FILTER(WHERE role='PATIENT')::int AS patients FROM public.users`),
+   pool.query(`SELECT COUNT(*) FILTER(WHERE accepted_at IS NOT NULL)::int AS accepted,
+     COUNT(*) FILTER(WHERE accepted_at IS NULL AND revoked_at IS NULL AND expires_at>NOW())::int AS pending,
+     COUNT(*) FILTER(WHERE accepted_at IS NULL AND (revoked_at IS NOT NULL OR expires_at<=NOW()))::int AS other FROM public.doctor_invitations`),
+   pool.query(`SELECT COUNT(*)::int AS open FROM public.emergency_cases WHERE case_status<>'CLOSED'`),
+   pool.query(`SELECT COUNT(*)::int AS current,
+     COUNT(*) FILTER(WHERE EXISTS(SELECT 1 FROM public.stay_doctor_assignments a
+       WHERE a.stay_id=s.stay_id AND a.status='ACTIVE' AND a.ended_at IS NULL))::int AS assigned
+     FROM public.ed_stays s WHERE s.visit_status IS NULL OR s.visit_status<>'DEPARTED'`)
+  ]);
+  res.json({users_total:users.rows[0].total,users_active:users.rows[0].active,
+    doctors:users.rows[0].doctors,er_staff:users.rows[0].er_staff,paramedics:users.rows[0].paramedics,patients:users.rows[0].patients,
+    invites_accepted:invites.rows[0].accepted,invites_pending:invites.rows[0].pending,invites_other:invites.rows[0].other,
+    cases_open:cases.rows[0].open,stays_current:stays.rows[0].current,stays_assigned:stays.rows[0].assigned});
+ }catch(e){fail(res,e,'Unable to load admin analytics');}
 });
 module.exports={router,publicRouter};
