@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const bcrypt = require('bcrypt');
 const pool = require('../db');
 const auth = require('../middleware/authMiddleware');
+const rateLimit = require('../middleware/rateLimit');
 const { sendEmail } = require('../utils/mailer');
 const inv = require('../services/invitationService');
 const router = express.Router();
@@ -166,7 +167,7 @@ router.delete('/cases/:id', async(req,res)=>{
 });
 
 // Public token validation and completion, rate limit advised at edge; tokens are 256-bit secrets.
-publicRouter.post('/validate-reset',async(req,res)=>{
+publicRouter.post('/validate-reset',rateLimit({windowMs:15*60*1000,max:20}),async(req,res)=>{
   const token=req.body?.token;
   if(typeof token!=='string'|| !/^[0-9a-f]{64}$/.test(token)) return res.status(400).json({error:'Invalid reset link'});
   try {const r=await pool.query(`SELECT u.username FROM admin_password_resets t JOIN users u ON u.user_id=t.user_id
@@ -175,17 +176,18 @@ publicRouter.post('/validate-reset',async(req,res)=>{
     res.json({username:r.rows[0].username});
   }catch(e){fail(res,e,'Unable to validate reset');}
 });
-publicRouter.post('/complete-reset',async(req,res)=>{
+publicRouter.post('/complete-reset',rateLimit({windowMs:15*60*1000,max:8}),async(req,res)=>{
   const {token,password}=req.body||{};
   if(typeof token!=='string'|| !/^[0-9a-f]{64}$/.test(token)|| typeof password!=='string'||password.length<12||password.length>128)
     return res.status(400).json({error:'Valid token and password of 12–128 characters required'});
-  const hash=await bcrypt.hash(password,10);
+  // Do not perform expensive bcrypt hashing for invalid/expired token requests.
   const c=await pool.connect();
   try {await c.query('BEGIN');
     const r=await c.query(`SELECT t.reset_id,t.user_id FROM admin_password_resets t JOIN users u ON u.user_id=t.user_id
       WHERE t.token_hash=$1 AND t.used_at IS NULL AND t.revoked_at IS NULL AND t.expires_at>NOW() AND u.is_active=TRUE FOR UPDATE OF t`,[inv.hashToken(token)]);
     if(!r.rowCount){await c.query('ROLLBACK');return res.status(410).json({error:'Reset link expired or already used'});}
     const item=r.rows[0];
+    const hash=await bcrypt.hash(password,10);
     await c.query('UPDATE users SET password_hash=$2 WHERE user_id=$1',[item.user_id,hash]);
     await c.query('UPDATE admin_password_resets SET used_at=NOW() WHERE reset_id=$1',[item.reset_id]);
     await audit(c,null,'PASSWORD_RESET_COMPLETED','USER',item.user_id,'One-time reset link');

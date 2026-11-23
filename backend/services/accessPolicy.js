@@ -76,14 +76,11 @@ async function canAccessStay(user, stayId, options = {}) {
   }
 
   if (user.role === "ER_STAFF") {
-    const statuses = options.postEr
-      ? [...LIVE_ER_STATUSES, "CLOSED"]
-      : LIVE_ER_STATUSES;
+    // A walk-in ER visit may have no emergency_cases row. ER staff have
+    // hospital-wide stay access; role authentication is checked by the guard.
     const r = await pool.query(
-      `SELECT 1 FROM emergency_cases
-       WHERE stay_id = $1 AND case_status = ANY($2)
-       LIMIT 1`,
-      [stayId, statuses]
+      'SELECT 1 FROM public.ed_stays WHERE stay_id = $1 LIMIT 1',
+      [stayId]
     );
     return r.rowCount > 0;
   }
@@ -174,12 +171,9 @@ async function stayListFilter(user) {
         params: [user.user_id],
       };
     case "ER_STAFF":
-      return {
-        clause: `s.stay_id IN (
-                   SELECT stay_id FROM emergency_cases
-                   WHERE case_status = ANY($1) AND stay_id IS NOT NULL)`,
-        params: [LIVE_ER_STATUSES],
-      };
+      // Board and visit listings must include direct walk-in registrations.
+      // Other endpoints must still enforce the user's ER_STAFF role.
+      return { clause: "TRUE", params: [] };
     case "DOCTOR": {
       const active = await activeAssignmentSql();
       return {

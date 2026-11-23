@@ -21,7 +21,7 @@ const pool = new Pool({
   // verification needs a separate, reviewed security fix.
   ssl:
     process.env.DB_SSL === "true"
-      ? { rejectUnauthorized: false }
+      ? { rejectUnauthorized: true }
       : false,
 });
 

@@ -56,6 +56,16 @@ async function manifest(client,kind,ids,actor){
   childRows[table]=caseIds.length?(await client.query(`SELECT ${q(pk)} AS id,case_id FROM public.${q(table)} WHERE case_id=ANY($1::integer[]) ORDER BY ${q(pk)} LIMIT 5001`,[caseIds])).rows:[];
   if(childRows[table].length>5000)blockers.push(`Too many ${table} rows; split into smaller batches`);
  }
+ // Never permanently remove a handover, recorded vitals, assessments or
+ // transport data from this live database, even after admin confirmation.
+ // A test username or a selected manifest is not proof of synthetic data.
+ for(const c of cases){
+   if(c.stay_id!=null || c.patient_id!=null)
+     blockers.push(`Case #${c.case_id} is linked to a patient or ER visit; archive it instead`);
+ }
+ for(const [table, rows] of Object.entries(childRows)){
+   if(rows.length)blockers.push(`Cannot purge ${rows.length} clinical/transport rows in ${table}; preserve the case`);
+ }
  // All additional foreign-key relationships must be empty: newly added tables
  // automatically block cleanup rather than being silently cascaded or orphaned.
  for(const dep of await fks(client,'public.emergency_cases')){

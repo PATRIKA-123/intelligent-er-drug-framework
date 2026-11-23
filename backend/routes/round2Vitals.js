@@ -4,7 +4,7 @@ const {requireStayAccess}=require('../services/accessPolicy');const {calculateNE
 const router=express.Router();
 const fields=['heart_rate','respiratory_rate','systolic_bp','diastolic_bp','spo2','temperature_celsius','consciousness','oxygen_support','spo2_scale'];
 const numeric=['heart_rate','respiratory_rate','systolic_bp','diastolic_bp','spo2','temperature_celsius','spo2_scale'];
-function parseBody(raw){
+function parseBody(raw, clinicianAuthorized=false){
  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Observation object required');
  if(!fields.some(x=>raw[x]!==undefined&&raw[x]!==null))throw Error('At least one measurement required');
  for(const k of numeric)if(raw[k]!==undefined&&(typeof raw[k]!=='number'||!Number.isFinite(raw[k])))throw Error(`${k} must be a number`);
@@ -17,12 +17,30 @@ function parseBody(raw){
  if(Number.isNaN(when.getTime())||when.getTime()>Date.now()+60000)throw Error('Invalid future observation_time');
  const complete=['heart_rate','respiratory_rate','systolic_bp','spo2','temperature_celsius','consciousness','oxygen_support','spo2_scale'].every(k=>raw[k]!==null&&raw[k]!==undefined);
  let news2=null;
- if(complete)news2=calculateNEWS2({heartRate:raw.heart_rate,respiratoryRate:raw.respiratory_rate,systolicBP:raw.systolic_bp,spo2:raw.spo2,temperatureCelsius:raw.temperature_celsius,consciousness:raw.consciousness,oxygenSupport:raw.oxygen_support,spo2Scale:raw.spo2_scale,scale2ClinicianAuthorized:raw.scale2_clinician_authorized===true});
+ if(complete)news2=calculateNEWS2({heartRate:raw.heart_rate,respiratoryRate:raw.respiratory_rate,systolicBP:raw.systolic_bp,spo2:raw.spo2,temperatureCelsius:raw.temperature_celsius,consciousness:raw.consciousness,oxygenSupport:raw.oxygen_support,spo2Scale:raw.spo2_scale,scale2ClinicianAuthorized:clinicianAuthorized===true});
  return {when,complete,news2};
 }
 router.post('/:stay_id/observations',auth,auth.requireRole('ER_STAFF','DOCTOR','ADMIN'),requireStayAccess(),async(req,res)=>{
  const stayId=Number(req.params.stay_id);if(!Number.isSafeInteger(stayId)||stayId<=0)return res.status(400).json({error:'Invalid stay_id'});
- let result;try{result=parseBody(req.body);}catch(e){return res.status(400).json({error:e.message,code:'VALIDATION_ERROR'});}
+ // Scale 2 cannot be authorized by a client-provided boolean. It requires
+ // a currently active, assigned DOCTOR with an unrevoked permission grant.
+ let clinicianAuthorized=false;
+ if(req.body?.spo2_scale===2){
+   if(req.user.role!=='DOCTOR')return res.status(403).json({error:'Scale 2 requires the assigned clinician to record this observation'});
+   try{
+     const permission=await pool.query(`SELECT 1 FROM public.user_clinical_permissions perm
+       JOIN public.users u ON u.user_id=perm.user_id
+       JOIN public.stay_doctor_assignments a ON a.doctor_user_id=u.user_id
+       WHERE perm.user_id=$1 AND perm.permission_code='NEWS2_SPO2_SCALE_2'
+         AND perm.revoked_at IS NULL
+         AND u.role='DOCTOR' AND u.is_active=TRUE AND u.archived_at IS NULL
+         AND a.stay_id=$2 AND a.status='ACTIVE' AND a.ended_at IS NULL
+       LIMIT 1`,[req.user.user_id,stayId]);
+     clinicianAuthorized=permission.rowCount>0;
+   }catch(e){console.error('Scale 2 authorization lookup:',e.code||'DB_ERROR');return res.status(503).json({error:'Unable to verify Scale 2 clinical authorization'});}
+   if(!clinicianAuthorized)return res.status(403).json({error:'Assigned doctor lacks active Scale 2 authorization'});
+ }
+ let result;try{result=parseBody(req.body,clinicianAuthorized);}catch(e){return res.status(400).json({error:e.message,code:'VALIDATION_ERROR'});}
  const client=await pool.connect();let started=false;
  try{
   await client.query('BEGIN');started=true;
