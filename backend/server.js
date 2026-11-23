@@ -29,6 +29,7 @@ const clinicalPermissionsRoutes = require("./routes/clinicalPermissions");
 const postErRoutes = require("./routes/postEr");
 const doctorsRoutes = require("./routes/doctors");
 const staffRoutes = require("./routes/staff");
+const adminManagement = require('./routes/adminManagement');
 let allowedOrigins;
 try { allowedOrigins = parseAllowedOrigins(process.env); }
 catch (error) {
@@ -54,8 +55,6 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "128kb" }));
 app.use(apiErrorContract);
-// B26: log protected clinical API outcomes with minimal redacted metadata.
-// This is an application-level interim trail; Patrika will implement durable audit persistence.
 app.use(clinicalAudit);
 app.get("/api/health", async (_req, res) => {
   try {
@@ -67,10 +66,8 @@ app.get("/api/health", async (_req, res) => {
     res.status(503).json({ status: "error", message: "Database is unavailable" });
   }
 });
-// ROUND2_B2_ROUTES: registration before read-only stays, patient directory as separate route.
 app.use("/api/patients", require("./routes/patients"));
 app.use("/api/stays", require("./routes/visitRegistration"));
-// ROUND2_C_ROUTES: scoped board before standard stay routes.
 app.use("/api/stays", require("./routes/round2Board"));
 app.use("/api/stays", require("./routes/round2Vitals").router);
 app.use("/api/stays", require("./routes/round2Departure"));
@@ -79,6 +76,8 @@ app.use("/api/alerts", require("./routes/round2Alerts"));
 app.use('/api/patient', round2PatientRoutes);
 app.use('/api/stays', round2IdentityRoutes.stayRouter);
 app.use('/api/admin', round2IdentityRoutes.adminRouter);
+app.use('/api/admin/management',adminManagement.router);
+app.use('/api/auth/password-reset',adminManagement.publicRouter);
 app.use("/api/stays", staysRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/emergency-cases", emergencyCasesRoutes);

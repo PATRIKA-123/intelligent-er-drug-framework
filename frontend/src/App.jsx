@@ -20,13 +20,15 @@ import PatientHealth from "./pages/PatientHealth";
 import PatientProfile from "./pages/PatientProfile";
 import ParamedicNew from "./pages/ParamedicNew";
 import AdminDoctors from "./pages/AdminDoctors";
+import AdminInvitations from "./pages/AdminInvitations";
+import AdminUsers from "./pages/AdminUsers";
+import AdminOperations from "./pages/AdminOperations";
+import AdminResetPassword from "./pages/AdminResetPassword";
 import AcceptInvitation from "./pages/AcceptInvitation";
-
 function Root() {
   const { user } = useAuth();
   return <Navigate to={user ? homeFor(user.role) : "/login"} replace />;
 }
-
 export default function App() {
   return (
     <Routes>
@@ -34,14 +36,15 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/accept-invitation" element={<AcceptInvitation />} />
+      <Route path="/reset-password" element={<AdminResetPassword />} />
       <Route element={<RequireRole />}>
         <Route element={<AppShell />}>
-          <Route element={<RequireRole roles={["PARAMEDIC", "ADMIN"]} />}>
+          <Route element={<RequireRole roles={["PARAMEDIC"]} />}>
             <Route path="/paramedic" element={<ParamedicHome />} />
             <Route path="/paramedic/new" element={<ParamedicNew />} />
             <Route path="/paramedic/cases/:caseId" element={<ParamedicCase />} />
           </Route>
-          <Route element={<RequireRole roles={["ER_STAFF", "ADMIN"]} />}>
+          <Route element={<RequireRole roles={["ER_STAFF"]} />}>
             <Route path="/board" element={<Board />} />
             <Route path="/incoming" element={<Incoming />} />
             <Route path="/follow-ups" element={<FollowUpsPage />} />
@@ -56,6 +59,9 @@ export default function App() {
           </Route>
           <Route element={<RequireRole roles={["ADMIN"]} />}>
             <Route path="/admin" element={<AdminDoctors />} />
+            <Route path="/admin/invitations" element={<AdminInvitations />} />
+            <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/admin/operations" element={<AdminOperations />} />
           </Route>
           <Route element={<RequireRole roles={["PATIENT"]} />}>
             <Route path="/patient" element={<PatientHome />} />
