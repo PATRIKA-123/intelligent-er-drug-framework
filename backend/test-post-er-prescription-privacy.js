@@ -13,15 +13,18 @@ function loadWithMocks(relative, mocks) {
     if (!(id in mocks)) throw new Error(`Unexpected dependency in test: ${id}`);
     return mocks[id];
   };
-  const wrapped = `(function(require, module, exports) {\n${code}\n})`;
-  vm.runInThisContext(wrapped, { filename })(fakeRequire, module, module.exports);
+  vm.runInThisContext(`(function(require,module,exports){\n${code}\n})`, { filename })(fakeRequire, module, module.exports);
   return module.exports;
 }
 
 function createPostErHarness() {
   const callRoles = [];
+  const observed = [];
   const fakeDb = { query: async (sql) => {
+    observed.push(sql);
     if (sql.includes("FROM discharges")) return { rows: [] };
+    // The production service also reads departure state from ed_stays.
+    if (/SELECT\s+departed_at\s+FROM\s+ed_stays/i.test(sql)) return { rows: [{ departed_at: null }] };
     if (sql.includes("FROM follow_ups")) return { rows: [] };
     if (sql.includes("FROM stay_doctor_assignments")) return { rows: [] };
     throw new Error(`Unexpected SQL: ${sql}`);
@@ -35,14 +38,15 @@ function createPostErHarness() {
     } },
     "./schemaCapabilities": { getColumns: async () => new Set(["assigned_at"]) },
   });
-  return { svc, callRoles };
+  return { svc, callRoles, observed };
 }
 
 test("Post-ER passes PATIENT role through to prescription visibility filtering", async () => {
-  const { svc, callRoles } = createPostErHarness();
+  const { svc, callRoles, observed } = createPostErHarness();
   const data = await svc.getPostErData(57, { role: "PATIENT" });
   assert.deepEqual(callRoles, ["PATIENT"]);
   assert.equal(Object.hasOwn(data.prescriptions[0], "screening_result"), false);
+  assert.ok(observed.some(sql => /SELECT\s+departed_at\s+FROM\s+ed_stays/i.test(sql)), "departure status must be read");
 });
 
 test("Post-ER passes DOCTOR role without weakening staff visibility", async () => {

@@ -119,7 +119,9 @@ router.post("/users/:userId/grant", async (req, res) => {
       `SELECT user_id
        FROM users
        WHERE user_id = $1
-         AND is_active = TRUE`,
+         AND role = 'DOCTOR'
+         AND is_active = TRUE
+         AND archived_at IS NULL`,
       [userId]
     );
 

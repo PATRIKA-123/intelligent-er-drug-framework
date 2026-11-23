@@ -41,6 +41,9 @@ function validateStartupEnvironment(env) {
   if (env.DB_SSL !== undefined && !["true", "false"].includes(env.DB_SSL)) {
     errors.push("DB_SSL must be true or false");
   }
+  if (env.NODE_ENV === "production" && env.DB_SSL !== "true") {
+    errors.push("DB_SSL must be true in production");
+  }
 
   if (errors.length > 0) {
     const error = new Error(errors.join("; "));

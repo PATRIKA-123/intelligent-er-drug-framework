@@ -3,6 +3,7 @@
 import { real } from "./real.js";
 import { mock } from "./mock.js";
 
-export const USE_MOCK = String(import.meta.env.VITE_USE_MOCK ?? "true") === "true";
+// Production may never silently fall back to synthetic/mock patient data.
+export const USE_MOCK = import.meta.env.DEV && String(import.meta.env.VITE_USE_MOCK ?? "false") === "true";
 export const api = USE_MOCK ? mock : real;
 export { configureClient, ApiError } from "./client.js";

@@ -1,6 +1,7 @@
 "use strict";
-// B01: deterministic authorization matrix; no database credentials or live data.
-// Run from repository root: node --test backend/test-b01-access-matrix.js
+// Authorization matrix for patient, ambulance, hospital and doctor roles.
+// Read-only ER-staff access to ER visits is intentionally hospital-wide,
+// including walk-ins not attached to a paramedic-created emergency case.
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const Module = require("node:module");
@@ -35,16 +36,18 @@ const user = (role, id) => ({ role, user_id: id });
 function reset(allowed) { grant = allowed; queries = []; }
 
 for (const [role, id] of [["PATIENT", 11], ["PARAMEDIC", 12], ["ER_STAFF", 13], ["DOCTOR", 14]]) {
-  test(`${role}: unrelated stay denied, related stay allowed, scoped SQL`, async () => {
+  test(`${role}: unrelated stay denied, related stay allowed, database-backed authorization`, async () => {
     reset(false);
-    assert.equal(await policy.canAccessStay(user(role,id), 57), false);
-    assert.ok(queries.length > 0, "must check database relationship");
-    assert.ok(queries.every(q => q.params.some(p => p === id || (Array.isArray(p) && p.length > 0))), "parameters must include current user or scoped status");
+    assert.equal(await policy.canAccessStay(user(role, id), 57), false);
+    assert.ok(queries.length > 0, "must check database relationship or ER stay existence");
+    assert.ok(queries.every(q => q.params.includes(57)), "authorization must be limited to the requested stay");
     if (role !== "ER_STAFF") {
-      assert.ok(queries.some(q => q.params.includes(id)), "user identity must be in relationship check");
+      assert.ok(queries.some(q => q.params.includes(id)), "caller-specific roles must use user ID");
+    } else {
+      assert.ok(queries.some(q => /\bFROM\s+public\.ed_stays\b/i.test(q.sql)), "ER staff check must verify the stay exists");
     }
     reset(true);
-    assert.equal(await policy.canAccessStay(user(role,id), 57), true);
+    assert.equal(await policy.canAccessStay(user(role, id), 57), true);
   });
 }
 
@@ -89,21 +92,24 @@ test("unsupported roles and invalid identifiers fail closed", async () => {
   }
 });
 
-test("list filters remain scoped for every non-admin role", async () => {
-  for (const role of ["PATIENT", "PARAMEDIC", "DOCTOR", "ER_STAFF"]) {
+test("non-hospital roles stay scoped while ER staff can list walk-in visits", async () => {
+  for (const role of ["PATIENT", "PARAMEDIC", "DOCTOR"]) {
     reset(false);
     const filter = await policy.stayListFilter(user(role, 77));
     assert.ok(filter.clause && filter.clause !== "TRUE");
-    assert.ok(Array.isArray(filter.params) && filter.params.length > 0);
+    assert.ok(Array.isArray(filter.params) && filter.params.includes(77));
   }
-  assert.equal((await policy.stayListFilter(user("UNKNOWN",77))).clause, "FALSE");
+  const er = await policy.stayListFilter(user("ER_STAFF", 77));
+  assert.equal(er.clause, "TRUE", "hospital role sees direct walk-in visits too");
+  assert.deepEqual(er.params, []);
+  assert.equal((await policy.stayListFilter(user("UNKNOWN", 77))).clause, "FALSE");
 });
 
 test("access middleware rejects unauthorized stay before controller", async () => {
   reset(false);
   let nextCalled = false;
   let status = null;
-  const req = { user: user("PATIENT",11), params: { stay_id: "57" }, method: "GET", originalUrl: "/api/stays/57" };
+  const req = { user: user("PATIENT", 11), params: { stay_id: "57" }, method: "GET", originalUrl: "/api/stays/57" };
   const res = { status(n) { status=n; return this; }, json() { return this; } };
   const oldWarn = console.warn;
   try {
