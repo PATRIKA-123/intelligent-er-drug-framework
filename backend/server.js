@@ -78,6 +78,7 @@ app.use('/api/stays', round2IdentityRoutes.stayRouter);
 app.use('/api/admin', round2IdentityRoutes.adminRouter);
 app.use('/api/admin/management',adminManagement.router);
 app.use("/api/admin/cleanup", require("./routes/adminCleanup"));
+app.use("/api/admin/test-cleanup", require("./routes/adminTestCleanup"));
 app.use('/api/auth/password-reset',adminManagement.publicRouter);
 app.use("/api/stays", staysRoutes);
 app.use("/api/auth", authRoutes);
