@@ -22,7 +22,11 @@ export default function PatientMedicines() {
       .then(([v, h]) => { setMine(h.medications); setSt({ loading: false, error: null, visits: v.visits }); })
       .catch((error) => setSt({ loading: false, error, visits: [] }));
   };
-  useEffect(load, []);
+  useEffect(() => {
+    let live = true;
+    Promise.all([api.listMyVisits(), api.listMyHealth()]).then(([v, h]) => { if (live) { setMine(h.medications); setSt({ loading: false, error: null, visits: v.visits }); } }).catch(error => { if (live) setSt({ loading: false, error, visits: [] }); });
+    return () => { live = false; };
+  }, []);
   if (st.loading) return <Loading label="Loading your medicines" />;
   if (st.error) return <ErrorState error={st.error} onRetry={load} />;
   const all = st.visits.flatMap((v) => v.prescriptions);

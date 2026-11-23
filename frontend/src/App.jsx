@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from "react-router";
-import { useAuth } from "./auth/AuthContext";
+import { useAuth } from './auth/useAuth';
 import { homeFor } from "./auth/roles";
 import RequireRole from "./auth/RequireRole";
 import AppShell from "./components/AppShell";

@@ -1,7 +1,7 @@
 import {useCallback,useEffect,useMemo,useState} from 'react';
 import {Link,useLocation} from 'react-router';
 import {adminApi} from '../api/admin';
-import {useAuth} from '../auth/AuthContext';
+import { useAuth } from '../auth/useAuth';
 const percent=(num,total)=>total?Math.min(100,Math.round(num/total*100)):0;
 const sections=[{key:'accounts',label:'Accounts'},{key:'invitations',label:'Invites'},{key:'operations',label:'Operations'}];
 function Metric({label,value,sub,href}){
@@ -12,7 +12,12 @@ export default function AdminRightPanel(){
  const {user}=useAuth();const location=useLocation();
  const [tab,setTab]=useState('accounts'),[state,setState]=useState({data:null,loading:true,error:'',updated:null});
  const reload=useCallback(async()=>{setState(s=>({...s,loading:true,error:''}));try{const data=await adminApi.summary();setState({data,loading:false,error:'',updated:new Date()})}catch(e){setState(s=>({...s,loading:false,error:e.message}))}},[]);
- useEffect(()=>{reload()},[location.pathname,reload]);
+ useEffect(()=>{
+  let live=true;
+  adminApi.summary().then(data=>{if(live)setState({data,loading:false,error:'',updated:new Date()})})
+    .catch(e=>{if(live)setState(prev=>({...prev,loading:false,error:e.message}))});
+  return ()=>{live=false};
+ },[location.pathname]);
  useEffect(()=>{const listener=()=>reload();window.addEventListener('parvah-admin-refresh',listener);return()=>window.removeEventListener('parvah-admin-refresh',listener)},[reload]);
  const d=state.data;
  const roleStats=useMemo(()=>[{label:'Doctors',key:'DOCTOR',num:d?.doctors},{label:'ER staff',key:'ER_STAFF',num:d?.er_staff},{label:'Paramedics',key:'PARAMEDIC',num:d?.paramedics},{label:'Patients',key:'PATIENT',num:d?.patients}], [d]);

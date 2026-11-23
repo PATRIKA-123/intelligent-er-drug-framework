@@ -18,7 +18,12 @@ export default function ParamedicHome() {
       .then((d) => setState({ loading: false, error: null, cases: d.cases || [] }))
       .catch((error) => setState({ loading: false, error, cases: [] }));
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => {
+    let live = true;
+    api.listCases().then(d => { if (live) setState({ loading: false, error: null, cases: d.cases || [] }); })
+      .catch(error => { if (live) setState({ loading: false, error, cases: [] }); });
+    return () => { live = false; };
+  }, []);
 
   const done = (c) => c.steps?.handover || c.transport?.transport_status === "CANCELLED";
   const shownCases = state.cases.filter((c) => (tab === "done" ? done(c) : !done(c)));

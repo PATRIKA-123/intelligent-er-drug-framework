@@ -17,15 +17,16 @@ export default function AcceptInvitation() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  const validToken = /^[a-f0-9]{64}$/i.test(token);
+  const currentPhase = validToken ? state.phase : "bad";
   useEffect(() => {
-    if (!/^[a-f0-9]{64}$/i.test(token)) {
-      setState({ phase: "bad", name: "", error: "This invitation link is incomplete. Open the link from your email again." });
-      return;
-    }
+    if (!validToken) return;
+    let live = true;
     api.validateInvitation(token)
-      .then((r) => setState({ phase: "ready", name: r.doctor_name || "", error: "" }))
-      .catch((e) => setState({ phase: "bad", name: "", error: e.message }));
-  }, [token]);
+      .then(r => { if (live) setState({ phase: "ready", name: r.doctor_name || "", error: "" }); })
+      .catch(e => { if (live) setState({ phase: "bad", name: "", error: e.message }); });
+    return () => { live = false; };
+  }, [token, validToken]);
 
   async function submit(e) {
     e.preventDefault();
@@ -50,17 +51,17 @@ export default function AcceptInvitation() {
     >
       <BrandPill />
       <div className="flex w-full max-w-[420px] flex-col gap-5 rounded-[32px] border border-white/20 bg-[rgba(18,20,28,0.78)] p-8 shadow-2xl">
-        {state.phase === "checking" && <p role="status" className="m-0 text-center text-sm text-[#D5D9E2]">Checking your invitation...</p>}
+        {currentPhase === "checking" && <p role="status" className="m-0 text-center text-sm text-[#D5D9E2]">Checking your invitation...</p>}
 
-        {state.phase === "bad" && (
+        {currentPhase === "bad" && (
           <>
             <h1 className="m-0 text-center text-2xl font-semibold tracking-tight">Invitation not available</h1>
-            <p role="alert" className="m-0 text-center text-sm text-[#FFB4B4]">{state.error}</p>
+            <p role="alert" className="m-0 text-center text-sm text-[#FFB4B4]">{validToken ? state.error : "This invitation link is incomplete. Open the link from your email again."}</p>
             <p className="m-0 text-center text-sm text-[#D5D9E2]">Invitations work once and expire after 24 hours. Ask your administrator to send a new one.</p>
           </>
         )}
 
-        {state.phase === "ready" && (
+        {currentPhase === "ready" && (
           <form onSubmit={submit} noValidate className="flex flex-col gap-4">
             <div className="text-center">
               <h1 className="m-0 text-2xl font-semibold tracking-tight">Welcome{state.name ? `, Dr. ${state.name}` : ""}</h1>
@@ -89,7 +90,7 @@ export default function AcceptInvitation() {
           </form>
         )}
 
-        {state.phase === "done" && (
+        {currentPhase === "done" && (
           <>
             <h1 className="m-0 text-center text-2xl font-semibold tracking-tight">You are all set</h1>
             <p role="status" className="m-0 text-center text-sm text-[#D5D9E2]">Your account is active. Sign in with your username and the password you just chose.</p>

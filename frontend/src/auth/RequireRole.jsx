@@ -1,5 +1,5 @@
 import { Navigate, Outlet, useLocation } from "react-router";
-import { useAuth } from "./AuthContext";
+import { useAuth } from './useAuth';
 import { homeFor } from "./roles";
 
 // Wraps routes. Not signed in -> login. Wrong role -> that role's home page.
