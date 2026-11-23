@@ -7,6 +7,8 @@ import Logo from "./Logo";
 import RightPanel from "./RightPanel";
 import { CaseNavProvider } from "./CaseNav";
 import UtilityRail from "./UtilityRail";
+import AdminSideRail from "./AdminSideRail";
+import AdminRightPanel from "./AdminRightPanel";
 function initials(name = "") { return name.slice(0, 2).toUpperCase() || "ME"; }
 export default function AppShell() {
   const { user, logout } = useAuth();
@@ -18,7 +20,7 @@ export default function AppShell() {
   function jump(e) {e.preventDefault();const q=query.trim();if(/^\d+$/.test(q))navigate(`/stays/${q}`);setQuery("");}
   const pillLink = ({ isActive }) => `flex h-11 items-center rounded-full px-5 text-sm transition ${isActive ? "bg-ink font-semibold text-white" : "font-medium text-text hover:bg-soft"}`;
   return <CaseNavProvider><div className="min-h-screen px-4 pb-28 pt-4 md:px-8 md:pb-14 md:pt-6 lg:pl-28">
-    <UtilityRail />
+    {isAdmin ? <AdminSideRail /> : <UtilityRail />}
     <header className="mb-8 hidden flex-wrap items-center justify-center gap-3 md:flex">
       <Link to={cfg.home} aria-label="Home" className="flex h-12 w-12 items-center justify-center rounded-full bg-surface"><Logo size={28} /></Link>
       <nav aria-label="Main" className="flex flex-wrap justify-center gap-1 rounded-full bg-surface p-1.5">{cfg.items.map(it=><NavLink key={it.to} to={it.to} end className={pillLink}>{it.label}</NavLink>)}</nav>
@@ -28,7 +30,7 @@ export default function AppShell() {
       <div className="relative lg:hidden"><button type="button" onClick={()=>setMenu(m=>!m)} aria-label={`Account menu for ${user.username}`} aria-expanded={menu} className="h-12 w-12 rounded-full bg-lavender text-sm font-semibold text-ink">{initials(user.username)}</button>{menu&&<div className="absolute right-0 top-14 z-20 w-56 rounded-3xl bg-surface p-4 shadow-lg"><div className="text-sm font-semibold">{user.username}</div><div className="mb-3 text-xs text-muted">{cfg.label}</div><button type="button" onClick={logout} className="flex h-11 w-full items-center gap-2 rounded-full border border-ink px-4 text-sm font-semibold"><Icon name="logout" size={16}/> Sign out</button></div>}</div>
     </header>
     <div className="mb-4 flex items-center justify-between md:hidden"><Link to={cfg.home} aria-label="Home" className="flex h-11 w-11 items-center justify-center rounded-full bg-surface"><Logo size={24}/></Link><span className="rounded-full bg-surface px-3 py-1.5 text-xs font-semibold">{cfg.label}</span></div>
-    <div className={`mx-auto flex items-start gap-6 ${isAdmin?'max-w-[1400px]':'max-w-[1680px]'}`}><main className="min-w-0 flex-1"><Outlet/></main>{!isAdmin&&<RightPanel/>}</div>
+    <div className={`mx-auto flex items-start gap-6 max-w-[1680px]`}><main className="min-w-0 flex-1"><Outlet/></main>{isAdmin ? <AdminRightPanel /> : <RightPanel/>}</div>
     <nav aria-label="Main" className="fixed inset-x-4 bottom-4 z-30 flex h-16 items-center justify-around rounded-full bg-surface px-3 shadow-lg md:hidden">{cfg.items.map(it=><NavLink key={it.to} to={it.to} end className={({isActive})=>`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] ${isActive?'font-semibold text-ink':'font-medium text-muted'}`}><Icon name={it.icon} size={21}/>{it.label}</NavLink>)}{cfg.action&&<Link to={cfg.action.to} aria-label={cfg.action.label} className="-mt-6 flex h-14 w-14 items-center justify-center rounded-full border-4 border-page bg-ink"><Icon name={cfg.action.icon} size={26} color="#FFFFFF" strokeWidth={2.6}/></Link>}<button type="button" onClick={logout} className="flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium text-muted"><Icon name="logout" size={21}/>Sign out</button></nav>
   </div></CaseNavProvider>;
 }

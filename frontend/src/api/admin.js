@@ -4,6 +4,9 @@ export const adminApi = {
   invitations: async () => (await request('/admin/management/invitations')).invitations || [],
   users: async () => (await request('/admin/management/users')).users || [],
   operations: () => request('/admin/management/operations'),
+  summary: () => request('/admin/management/summary'),
+  cleanupPreview: (kind, ids) => request('/admin/cleanup/preview',{method:'POST',body:{kind,ids}}),
+  cleanupExecute: (kind, ids, reason, confirmation) => request('/admin/cleanup/execute',{method:'POST',body:{kind,ids,reason,confirmation}}),
   resend: (row, email) => request(`${row.role === 'DOCTOR' ? '/doctors' : '/staff'}/${row.user_id}/resend-invitation`, {
     method: 'POST',body: email ? {email} : {},
   }),
