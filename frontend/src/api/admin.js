@@ -14,6 +14,7 @@ export const adminApi = {
   }),
   deletePending: (row) => request(`${row.role === 'DOCTOR' ? '/doctors' : '/staff'}/${row.user_id}`, {method:'DELETE'}),
   status: (id, is_active, reason) => request(`/admin/management/users/${id}/status`, {method:'PATCH',body:{is_active,reason}}),
+  archive: (id, reason) => request(`/admin/management/users/${id}/archive`,{method:'POST',body:{reason,confirmation:'ARCHIVE ACCOUNT'}}),
   reset: (id) => request(`/admin/management/users/${id}/password-reset`, {method:'POST',body:{}}),
   deleteEmptyCase: (id, reason) => request(`/admin/management/cases/${id}`, {method:'DELETE',body:{reason}}),
   validateReset: (token) => request('/auth/password-reset/validate-reset', {method:'POST',body:{token}}),

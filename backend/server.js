@@ -66,6 +66,7 @@ app.get("/api/health", async (_req, res) => {
     res.status(503).json({ status: "error", message: "Database is unavailable" });
   }
 });
+app.use("/api", require("./routes/formRequiredFields"));
 app.use("/api/patients", require("./routes/patients"));
 app.use("/api/stays", require("./routes/visitRegistration"));
 app.use("/api/stays", require("./routes/round2Board"));
@@ -73,15 +74,18 @@ app.use("/api/stays", require("./routes/round2Vitals").router);
 app.use("/api/stays", require("./routes/round2Departure"));
 app.use("/api/post-er", require("./routes/round2PostEr"));
 app.use("/api/alerts", require("./routes/round2Alerts"));
+app.use('/api/patient', require('./routes/patientInstantClaim'));
 app.use('/api/patient', round2PatientRoutes);
 app.use('/api/stays', round2IdentityRoutes.stayRouter);
 app.use('/api/admin', round2IdentityRoutes.adminRouter);
 app.use('/api/admin/management',adminManagement.router);
+app.use('/api/admin/management', require('./routes/adminAccountArchive'));
 app.use("/api/admin/cleanup", require("./routes/adminCleanup"));
 app.use("/api/admin/test-cleanup", require("./routes/adminTestCleanup"));
 app.use('/api/auth/password-reset',adminManagement.publicRouter);
 app.use("/api/stays", staysRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/emergency-cases", require("./routes/erIncomingRead"));
 app.use("/api/emergency-cases", emergencyCasesRoutes);
 app.use("/api/emergency-cases", preErRoutes);
 app.use("/api/clinical-context", clinicalContextRoutes);
