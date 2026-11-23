@@ -369,7 +369,7 @@ router.patch(
   async (req, res) => {
     try {
       const prescriptionId = Number(req.params.prescription_id);
-      const { status, review_notes } = req.body || {};
+      const { status, review_notes, clinical_override, acknowledged_incomplete, acknowledged_interactions } = req.body || {};
 
       if (
         !Number.isSafeInteger(prescriptionId) ||
@@ -397,12 +397,19 @@ router.patch(
         });
       }
 
+      if ([clinical_override, acknowledged_incomplete, acknowledged_interactions].some(
+        value => value !== undefined && typeof value !== 'boolean')) {
+        return res.status(400).json({ error: 'Override and acknowledgments must be booleans' });
+      }
       const prescription = await reviewPrescription(
         req.stayId,
         prescriptionId,
         {
           status,
           review_notes: review_notes?.trim(),
+          clinical_override: clinical_override === true,
+          acknowledged_incomplete: acknowledged_incomplete === true,
+          acknowledged_interactions: acknowledged_interactions === true,
         },
         req.user.user_id
       );

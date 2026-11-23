@@ -1,0 +1,8 @@
+/* Keep the right panel independently scrollable, without an exposed gutter. */
+.parvah-right-pane-scroll {
+  scrollbar-width: none; /* Firefox, modern Chromium */
+  -ms-overflow-style: none; /* Legacy Edge */
+}
+.parvah-right-pane-scroll::-webkit-scrollbar {
+  display: none; /* Chromium, Safari */
+}
