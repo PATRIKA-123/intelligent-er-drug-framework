@@ -1,0 +1,20 @@
+import {useCallback,useEffect,useMemo,useState} from 'react';
+import {adminApi} from '../api/admin';
+import {Action,Empty,Notice,PageHeader,Panel,Pill,ROLE_LABEL,useAdminTask,when} from './AdminShared';
+
+export default function AdminInvitations(){
+ const [rows,setRows]=useState([]),[loading,setLoading]=useState(true),[filter,setFilter]=useState('ALL'),[search,setSearch]=useState('');
+ const refresh=useCallback(async()=>{setRows(await adminApi.invitations());},[]);
+ const {busy,error,message,run}=useAdminTask(refresh);
+ useEffect(()=>{let active=true;refresh().catch(()=>{}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[refresh]);
+ const visible=useMemo(()=>rows.filter(r=>(filter==='ALL'||r.status===filter)&&[r.full_name,r.username,r.email,r.role].join(' ').toLowerCase().includes(search.toLowerCase())),[rows,filter,search]);
+ const pendingUsers=new Set(rows.filter(r=>r.status==='ACCEPTED').map(r=>String(r.user_id)));
+ function resend(r){if(!window.confirm(`Send a new invitation to ${r.email}? Earlier pending links will stop working.`))return;run('send'+r.invitation_id,()=>adminApi.resend(r),`A replacement invitation was requested for ${r.email}.`)}
+ function remove(r){const name=window.prompt(`Permanently delete the UNUSED account for ${r.username}? This cannot be undone.\nType DELETE to confirm.`);if(name!=='DELETE')return;run('delete'+r.user_id,()=>adminApi.deletePending(r),'Unused account deleted.');}
+ return <div className="flex flex-col gap-5"><PageHeader title="Invitations" description="Every staff invitation in one place: sent time, expiry, acceptance, and safe account cleanup."><Action onClick={()=>run('refresh',async()=>{},'List refreshed')}>Refresh</Action></PageHeader>
+ <Panel><div className="flex flex-wrap gap-3"><input aria-label="Search invitations" className="field min-w-[190px] flex-1" placeholder="Search name, email, username..." value={search} onChange={e=>setSearch(e.target.value)}/><select aria-label="Status filter" className="field" value={filter} onChange={e=>setFilter(e.target.value)}>{['ALL','PENDING','ACCEPTED','EXPIRED','REVOKED'].map(x=><option key={x} value={x}>{x==='ALL'?'All statuses':x}</option>)}</select></div></Panel>
+ <Notice error={error} message={message}/>{loading?<Empty>Loading invitations…</Empty>:visible.length===0?<Empty>No invitations match the filters.</Empty>:
+ <div className="grid gap-3">{visible.map(r=><Panel key={r.invitation_id} className="flex flex-col gap-4"><div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0"><div className="text-lg font-semibold">{r.full_name || r.username}</div><div className="mt-1 break-all text-sm text-muted">{r.email} · @{r.username}</div><div className="mt-2 flex flex-wrap gap-2"><Pill>{ROLE_LABEL[r.role] || r.role}</Pill><Pill tone={r.status==='ACCEPTED'?'good':r.status==='PENDING'?'warn':'bad'}>{r.status}</Pill></div></div><div className="text-xs leading-6 text-muted">Invited: {when(r.created_at)}<div>Expires: {when(r.expires_at)}</div><div>Accepted: {when(r.accepted_at)}</div></div></div>
+ <div className="flex flex-wrap gap-2 border-t border-line pt-4">{!r.is_active&&!pendingUsers.has(String(r.user_id))&&<><Action disabled={!!busy} onClick={()=>resend(r)}>Resend invitation</Action><Action danger disabled={!!busy} onClick={()=>remove(r)}>Delete unused account</Action></>}<span className="self-center text-xs text-muted">Invitation #{r.invitation_id}</span></div></Panel>)}</div>}
+ </div>
+}
