@@ -31,11 +31,23 @@ test('B21: only actively assigned doctor may review and pending only',()=>{
   assert.match(code,/ended_at IS NULL/);
   assert.match(code,/status !== "PENDING_REVIEW"/);
 });
-test('B21: incomplete screenings cannot authorize; rejection remains possible',()=>{
+test('B21: incomplete screening requires documented assigned-doctor override; rejection remains possible',()=>{
   const code=between(rx,'async function reviewPrescription(', '/**\n * Retrieves prescriptions');
+  // Status remains incomplete: authorization never silently re-labels an unmapped drug as screened.
   assert.match(code,/data\.status === "AUTHORIZED"/);
-  assert.match(code,/screening_status !== "SCREENED"/);
+  assert.match(code,/screenStatus !== "SCREENED"/);
+  assert.match(code,/data\.clinical_override !== true/);
+  assert.match(code,/data\.acknowledged_incomplete !== true/);
+  assert.match(code,/justification\.length < 30/);
+  assert.match(code,/review_notes/);
+  assert.match(code,/doctor_user_id = \$2/);
+  assert.match(code,/status !== "PENDING_REVIEW"/);
   assert.match(service,/prescription can be rejected even if screening is incomplete/);
+});
+test('B21: detected interactions must be explicitly acknowledged before authorization',()=>{
+  const code=between(rx,'async function reviewPrescription(', '/**\n * Retrieves prescriptions');
+  assert.match(code,/findings\.length && data\.acknowledged_interactions !== true/);
+  assert.match(code,/screening\.interactions_found/);
 });
 test('B21: discharge ensures single row under a stay lock',()=>{
   const code=between(post,'async function createDischarge(', 'async function ');

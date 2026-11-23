@@ -409,15 +409,27 @@ async function reviewPrescription(
       throw error;
     }
 
+    let persistedReviewNotes = data.review_notes || null;
     if (data.status === "AUTHORIZED") {
       const screening = prescriptionResult.rows[0].screening_result;
-
-      if (!screening || screening.screening_status !== "SCREENED") {
-        const error = new Error(
-          "Cannot authorize prescription because interaction screening is incomplete. Review the medication mapping and screening result first."
-        );
-        error.statusCode = 409;
-        throw error;
+      const screenStatus = screening?.screening_status;
+      if (!screening || !["SCREENED", "UNMAPPED", "INCOMPLETE_SCREENING"].includes(screenStatus)) {
+        const error = new Error("Missing or invalid drug screening result.");
+        error.statusCode = 409; throw error;
+      }
+      const findings = Array.isArray(screening.interactions_found) ? screening.interactions_found : [];
+      if (findings.length && data.acknowledged_interactions !== true) {
+        const error = new Error("The assigned doctor must acknowledge detected interaction findings.");
+        error.statusCode = 409; throw error;
+      }
+      if (screenStatus !== "SCREENED") {
+        const justification = typeof data.review_notes === "string" ? data.review_notes.trim() : "";
+        if (data.clinical_override !== true || data.acknowledged_incomplete !== true || justification.length < 30 || justification.length > 1600) {
+          const error = new Error("Documented clinical override, explicit acknowledgment, and a 30–1600 character justification are required for incomplete screening.");
+          error.statusCode = 409; throw error;
+        }
+        const unknownCount = Array.isArray(screening.existing_unmapped_medications) ? screening.existing_unmapped_medications.length : 0;
+        persistedReviewNotes = '[CLINICIAN_OVERRIDE; screening_status=' + screenStatus + '; interaction_findings=' + findings.length + '; unmapped_existing=' + unknownCount + ']\nClinical justification: ' + justification;
       }
     }
 
@@ -433,7 +445,7 @@ async function reviewPrescription(
       [
         data.status,
         doctorUserId,
-        data.review_notes || null,
+        persistedReviewNotes,
         prescriptionId,
         stayId,
       ]

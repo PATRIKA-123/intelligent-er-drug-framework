@@ -16,6 +16,8 @@ export default function Prescription() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(null); // { prescription, screening }
   const [acked, setAcked] = useState(false);
+  const [incompleteAck, setIncompleteAck] = useState(false);
+  const [clinicalReason, setClinicalReason] = useState("");
   const [decision, setDecision] = useState(null);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -23,7 +25,9 @@ export default function Prescription() {
   const interactions = screening?.interactions_found || [];
   const complete = screening?.screening_status === "SCREENED";
   const needsAck = interactions.length > 0;
-  const canAuthorize = saved && !decision && complete && (!needsAck || acked);
+  const needsOverride = !!saved && !complete;
+  const reasonValid = clinicalReason.trim().length >= 30 && clinicalReason.trim().length <= 1600;
+  const canAuthorize = !!saved && !decision && (!needsAck || acked) && (!needsOverride || (incompleteAck && reasonValid));
 
   async function save(e) {
     e.preventDefault();
@@ -37,6 +41,8 @@ export default function Prescription() {
       const body = Object.fromEntries(Object.entries(form).filter(([, v]) => v.trim() !== ""));
       setSaved(await api.createPrescription(stayId, body));
       setAcked(false);
+      setIncompleteAck(false);
+      setClinicalReason("");
       setDecision(null);
     } catch (err) {
       setError(err.message);
@@ -49,7 +55,13 @@ export default function Prescription() {
     setError("");
     setBusy(true);
     try {
-      await api.reviewPrescription(stayId, saved.prescription.prescription_id, { status });
+      await api.reviewPrescription(stayId, saved.prescription.prescription_id, {
+        status,
+        clinical_override: status === "AUTHORIZED" && needsOverride,
+        acknowledged_incomplete: status === "AUTHORIZED" && incompleteAck,
+        acknowledged_interactions: status === "AUTHORIZED" && acked,
+        review_notes: status === "AUTHORIZED" && needsOverride ? clinicalReason.trim() : undefined,
+      });
       setDecision(status);
     } catch (err) {
       setError(err.message);
@@ -108,8 +120,8 @@ export default function Prescription() {
             </Button>
           ) : (
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="rounded-full bg-lavender px-3.5 py-1.5 text-[13px] font-bold">Saved, screened</span>
-              <Button variant="outline" className="h-11!" onClick={() => { setSaved(null); setDecision(null); setForm(EMPTY); }}>
+              <span className="rounded-full bg-lavender px-3.5 py-1.5 text-[13px] font-bold">{complete ? "Saved — screening complete" : "Saved — screening incomplete"}</span>
+              <Button variant="outline" className="h-11!" onClick={() => { setSaved(null); setDecision(null); setForm(EMPTY); setAcked(false); setIncompleteAck(false); setClinicalReason(""); }}>
                 Start over
               </Button>
             </div>
@@ -137,7 +149,7 @@ export default function Prescription() {
                 notes={
                   complete
                     ? undefined
-                    : screening.mapping_reason || "Some medications could not be matched, so authorization is blocked."
+                    : screening.mapping_reason || "Some medications could not be matched. This does not establish drug safety."
                 }
               />
               <div className="flex items-center gap-2.5 text-sm">
@@ -172,8 +184,25 @@ export default function Prescription() {
                     </span>
                   </label>
                 )}
+                {needsOverride && (
+                  <div className="flex flex-col gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+                    <strong>Incomplete drug safety screening — clinician judgment required</strong>
+                    <p className="m-0">When the proposed drug is UNMAPPED, its interactions have NOT been checked. When screening is incomplete, some interactions may remain unidentified. Review all shown findings and independently assess the medication, formulation, dose, and patient context. This is not a clean safety result.</p>
+                    {!!screening?.existing_unmapped_medications?.length && (
+                      <ul className="m-0 list-disc pl-5">
+                        {screening.existing_unmapped_medications.map((m, i) => <li key={m.medication_id ?? i}>{m.medication_name}: {m.reason}</li>)}
+                      </ul>
+                    )}
+                    <label htmlFor="clinical-review-reason" className="font-semibold">Clinical justification for this exception</label>
+                    <textarea id="clinical-review-reason" className="field min-h-28 resize-y bg-white" value={clinicalReason} maxLength={1600} onChange={e => setClinicalReason(e.target.value)} placeholder="Document review of interactions, unresolved mapping, dose, patient context and medical rationale (minimum 30 characters)." />
+                    <label className="flex items-start gap-2">
+                      <input type="checkbox" className="mt-1 h-5 w-5 accent-ink" checked={incompleteAck} onChange={e => setIncompleteAck(e.target.checked)} />
+                      <span>I acknowledge incomplete drug safety screening, have independently reviewed this prescription, and accept responsibility for this documented clinical decision.</span>
+                    </label>
+                  </div>
+                )}
                 <Button disabled={!canAuthorize || busy} onClick={() => review("AUTHORIZED")} className="h-14 text-base">
-                  {complete ? (needsAck && !acked ? "Authorize (confirm the review first)" : "Authorize") : "Authorize (screening incomplete)"}
+                  {needsOverride ? "Authorize with documented clinical override" : "Authorize"}
                 </Button>
                 <Button variant="outline" disabled={busy} onClick={() => review("REJECTED")} className="h-14 text-base">
                   Reject
