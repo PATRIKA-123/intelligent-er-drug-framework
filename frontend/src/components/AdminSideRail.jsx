@@ -7,6 +7,7 @@ const sections=[
  {to:'/admin/invitations',label:'Invitations',icon:'calendar'},
  {to:'/admin/users',label:'Users',icon:'list'},
  {to:'/admin/operations',label:'Operations',icon:'home'},
+ {to:'/admin/history',label:'Archive / History',icon:'calendar'},
 ];
 export default function AdminSideRail(){
  const {user,logout}=useAuth();

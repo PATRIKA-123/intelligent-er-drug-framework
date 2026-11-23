@@ -23,6 +23,7 @@ import AdminDoctors from "./pages/AdminDoctors";
 import AdminInvitations from "./pages/AdminInvitations";
 import AdminUsers from "./pages/AdminUsers";
 import AdminOperations from "./pages/AdminOperations";
+import AdminHistory from "./pages/AdminHistory";
 import AdminResetPassword from "./pages/AdminResetPassword";
 import AcceptInvitation from "./pages/AcceptInvitation";
 function Root() {
@@ -62,6 +63,7 @@ export default function App() {
             <Route path="/admin/invitations" element={<AdminInvitations />} />
             <Route path="/admin/users" element={<AdminUsers />} />
             <Route path="/admin/operations" element={<AdminOperations />} />
+            <Route path="/admin/history" element={<AdminHistory />} />
           </Route>
           <Route element={<RequireRole roles={["PATIENT"]} />}>
             <Route path="/patient" element={<PatientHome />} />

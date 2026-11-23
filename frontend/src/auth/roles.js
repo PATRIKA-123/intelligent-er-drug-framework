@@ -21,6 +21,7 @@ export const ROLE_CONFIG = {
       { label: "Invitations", to: "/admin/invitations", icon: "calendar" },
       { label: "Users", to: "/admin/users", icon: "list" },
       { label: "Operations", to: "/admin/operations", icon: "home" },
+      { label: "History", to: "/admin/history", icon: "calendar" },
     ],
   },
   PATIENT: {
