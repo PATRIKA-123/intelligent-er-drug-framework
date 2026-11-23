@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink } from "react-router";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from '../auth/useAuth';
 import { ROLE_CONFIG } from "../auth/roles";
 import { useStays } from "../lib/useStays";
 import Icon from "./Icon";
 import Logo from "./Logo";
-import { STEP_DEFS, VISIT_SECTIONS, stepDone, useCaseNav, useVisitNav } from "./CaseNav";
+import { STEP_DEFS, VISIT_SECTIONS, stepDone, useCaseNav, useVisitNav } from '../lib/caseNavHooks';
 import { riskLevel } from "../lib/risk";
 import { SCORE_NAME, SCORE_REF } from "../lib/terms";
 

@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { api } from "../api";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from '../auth/useAuth';
 import { ROLE_CONFIG } from "../auth/roles";
 import { useStays } from "../lib/useStays";
 import Mascot from "./Mascot";
-import { useCaseNav, useVisitNav } from "./CaseNav";
+import { useCaseNav, useVisitNav } from '../lib/caseNavHooks';
 import { fmtNum, formatDateTime } from "../lib/format";
 import RiskBadge from "./RiskBadge";
 import StatusChip from "./StatusChip";
@@ -79,16 +79,20 @@ function StaffPanel() {
 
 
 // Small loader shared by the cards that call an endpoint which may not exist on the real server.
-function useLoad(fn, deps) {
+const fetchPostEr = (id) => api.getPostEr(id);
+const fetchGetPatientHistory = (id) => api.getPatientHistory(id);
+const fetchListFollowUps = () => api.listFollowUps();
+const fetchListPendingReviews = () => api.listPendingReviews();
+const fetchListDoctors = () => api.listDoctors();
+const fetchListMyVisits = () => api.listMyVisits();
+function useLoad(fetcher, key) {
   const [st, setSt] = useState({ loading: true, error: null, data: null });
   useEffect(() => {
     let live = true;
-    setSt({ loading: true, error: null, data: null });
-    fn().then((data) => live && setSt({ loading: false, error: null, data }))
-      .catch((error) => live && setSt({ loading: false, error, data: null }));
+    fetcher(key).then(data => { if (live) setSt({ loading: false, error: null, data }); })
+      .catch(error => { if (live) setSt({ loading: false, error, data: null }); });
     return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [fetcher, key]);
   return st;
 }
 
@@ -107,7 +111,7 @@ function Row({ k, v }) {
 
 function VisitCard({ visit }) {
   const { stayId, summary: s } = visit;
-  const post = useLoad(() => api.getPostEr(stayId), [stayId]);
+  const post = useLoad(fetchPostEr, stayId);
   const d = post.data;
   const alerts = s.clinical_alerts?.alerts?.length || 0;
   const pending = d?.prescriptions?.filter((p) => p.status === "PENDING_REVIEW").length || 0;
@@ -128,7 +132,7 @@ function VisitCard({ visit }) {
 }
 
 function HistoryCard({ stayId }) {
-  const st = useLoad(() => api.getPatientHistory(stayId), [stayId]);
+  const st = useLoad(fetchGetPatientHistory, stayId);
   const h = st.data;
   if (st.loading || st.error || !h) return null;
   if (!h.linked) return <Card title="Patient history"><Note>No patient profile is linked to this visit.</Note></Card>;
@@ -167,7 +171,7 @@ function HistoryCard({ stayId }) {
 }
 
 function FollowUpsCard() {
-  const st = useLoad(() => api.listFollowUps(), []);
+  const st = useLoad(fetchListFollowUps, null);
   const rows = (st.data || []).filter((f) => !f.status || !/DONE|COMPLETE|CANCEL/i.test(f.status)).slice(0, 6);
   return (
     <Card title="Coming up">
@@ -189,7 +193,7 @@ function FollowUpsCard() {
 }
 
 function ReviewCard() {
-  const st = useLoad(() => api.listPendingReviews(), []);
+  const st = useLoad(fetchListPendingReviews, null);
   const rows = st.data || [];
   return (
     <Card title="Medicines waiting for review">
@@ -211,7 +215,7 @@ function ReviewCard() {
 }
 
 function StaffCard() {
-  const st = useLoad(() => api.listDoctors(), []);
+  const st = useLoad(fetchListDoctors, null);
   const docs = Array.isArray(st.data) ? st.data : null;
   return (
     <Card title="Doctors on the system">
@@ -231,7 +235,7 @@ function StaffCard() {
 }
 
 function PatientPanel() {
-  const st = useLoad(() => api.listMyVisits(), []);
+  const st = useLoad(fetchListMyVisits, null);
   const d = st.data;
   const meds = d ? d.visits.reduce((n, v) => n + v.prescriptions.length, 0) : 0;
   return (
@@ -318,7 +322,7 @@ export default function RightPanel() {
   let body;
   if (user.role === "PATIENT") body = <PatientPanel />;
   else if (nav?.c || user.role === "PARAMEDIC") body = <ParamedicPanel />;
-  else if (visit) body = <><VisitCard visit={visit} /><HistoryCard stayId={visit.stayId} /><StaffPanel /></>;
+  else if (visit) body = <><VisitCard key={visit.stayId} visit={visit} /><HistoryCard key={visit.stayId} stayId={visit.stayId} /><StaffPanel /></>;
   else if (pathname === "/follow-ups") body = <><FollowUpsCard /><StaffPanel /></>;
   else if (pathname === "/admin") body = <><StaffCard /><StaffPanel /></>;
   else if (user.role === "DOCTOR") body = <><ReviewCard /><StaffPanel /></>;

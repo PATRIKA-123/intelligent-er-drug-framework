@@ -1,7 +1,7 @@
 import {useState} from 'react';
 import {Link,Navigate,useNavigate} from 'react-router';
 import {api} from '../api';
-import {useAuth} from '../auth/AuthContext';
+import { useAuth } from '../auth/useAuth';
 import {homeFor} from '../auth/roles';
 import BrandPill from '../components/BrandPill';
 import Icon from '../components/Icon';

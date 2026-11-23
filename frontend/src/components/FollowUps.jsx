@@ -78,6 +78,9 @@ function Departure({ stayId, dis, canMark, onDone }) {
 }
 
 export default function FollowUps({ stayId, canAdd }) {
+  return <FollowUpsContent key={stayId} stayId={stayId} canAdd={canAdd} />;
+}
+function FollowUpsContent({ stayId, canAdd }) {
   const [state, setState] = useState({ loading: true, error: null, data: null });
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
@@ -89,7 +92,13 @@ export default function FollowUps({ stayId, canAdd }) {
       .then((data) => setState({ loading: false, error: null, data }))
       .catch((error) => setState({ loading: false, error, data: null }));
   }, [stayId]);
-  useEffect(() => { setForm(EMPTY); setMsg(null); load(); }, [load]);
+  useEffect(() => {
+    let live = true;
+    api.getPostEr(stayId)
+      .then(data => { if (live) setState({ loading: false, error: null, data }); })
+      .catch(error => { if (live) setState({ loading: false, error, data: null }); });
+    return () => { live = false; };
+  }, [stayId]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 

@@ -32,7 +32,12 @@ export default function Board() {
       .then((d) => setState({ loading: false, error: null, stays: d.stays || [] }))
       .catch((error) => setState({ loading: false, error, stays: [] }));
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => {
+    let live = true;
+    getStays(false).then(d => { if (live) setState({ loading: false, error: null, stays: d.stays || [] }); })
+      .catch(error => { if (live) setState({ loading: false, error, stays: [] }); });
+    return () => { live = false; };
+  }, []);
 
   const rows = useMemo(() => {
     const withLevel = state.stays.map((s) => ({ ...s, level: riskLevel(s.latest_news2?.risk_level) }));

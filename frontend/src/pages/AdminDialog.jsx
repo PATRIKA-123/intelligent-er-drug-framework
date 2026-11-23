@@ -1,11 +1,15 @@
 import {useEffect,useId,useState} from 'react';
 
 /** Accessible, centered, non-native confirmation. Never put secrets in these dialogs. */
-export default function AdminDialog({config,onClose,onConfirm,busy=false}){
+export default function AdminDialog(props){
+ if(!props.config)return null;
+ return <DialogContent key={[props.config.title,props.config.phrase].join(':')} {...props}/>;
+}
+function DialogContent({config,onClose,onConfirm,busy=false}){
  const [reason,setReason]=useState('');
  const [confirmation,setConfirmation]=useState('');
  const headingId=useId();
- useEffect(()=>{setReason('');setConfirmation('')},[config?.title,config?.phrase]);
+ // State resets by remounting the keyed DialogContent when the action changes.
  useEffect(()=>{
   if(!config)return undefined;
   const onKey=e=>{if(e.key==='Escape'&&!busy)onClose()};

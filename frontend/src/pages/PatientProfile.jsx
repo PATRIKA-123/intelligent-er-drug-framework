@@ -37,7 +37,11 @@ export default function PatientProfile() {
       setSt({ loading: false, error: null });
     }).catch((error) => setSt({ loading: false, error }));
   };
-  useEffect(load, []);
+  useEffect(() => {
+    let live = true;
+    api.listMyVisits().then(d => { if (!live) return; const p = d.profile; setF({ full_name: p.full_name, dob: p.dob, phone: p.phone, email: p.email || "", share: p.share !== false, ec_name: p.emergency_contact?.name || "", ec_phone: p.emergency_contact?.phone || "" }); setSt({ loading: false, error: null }); }).catch(error => { if (live) setSt({ loading: false, error }); });
+    return () => { live = false; };
+  }, []);
   if (st.loading) return <Loading label="Loading your profile" />;
   if (st.error) return <ErrorState error={st.error} onRetry={load} />;
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));

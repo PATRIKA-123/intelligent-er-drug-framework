@@ -42,7 +42,11 @@ export default function PatientHome() {
     setSt({ loading: true, error: null, data: null });
     api.listMyVisits().then((data) => setSt({ loading: false, error: null, data })).catch((error) => setSt({ loading: false, error, data: null }));
   };
-  useEffect(load, []);
+  useEffect(() => {
+    let live = true;
+    api.listMyVisits().then(data => { if (live) setSt({ loading: false, error: null, data }); }).catch(error => { if (live) setSt({ loading: false, error, data: null }); });
+    return () => { live = false; };
+  }, []);
 
   if (st.loading) return <Loading label="Loading your visits" />;
   if (st.error) return <ErrorState error={st.error} onRetry={load} />;

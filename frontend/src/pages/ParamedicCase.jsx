@@ -8,11 +8,12 @@ import RiskBadge from "../components/RiskBadge";
 import StatusChip from "../components/StatusChip";
 import { ErrorState, Loading } from "../components/States";
 import { fmtNum } from "../lib/format";
-import { useRegisterCaseNav, STEP_DEFS, stepDone } from "../components/CaseNav";
+import { useRegisterCaseNav, STEP_DEFS, stepDone } from '../lib/caseNavHooks';
 import { SCORE_NAME, SCORE_REF } from "../lib/terms";
 import { lastTransport, rememberTransport } from "../lib/lastTransport";
 import { useMemo } from "react";
-import { VitalsHistory, HandoverSummary, Timeline, repeatDue } from "../components/CaseExtras";
+import { VitalsHistory, HandoverSummary, Timeline } from '../components/CaseExtras';
+import { repeatDue } from '../lib/caseExtrasText';
 import { agoText } from "../lib/format";
 
 const CONSCIOUSNESS = [
@@ -120,13 +121,16 @@ export default function ParamedicCase() {
       .catch((error) => setState({ loading: false, error, c: null }));
   }, [caseId]);
   useEffect(() => {
-    setState((s) => ({ ...s, loading: true, error: null }));
-    load();
-  }, [load]);
+    let live = true;
+    api.getCase(caseId)
+      .then(c => { if (live) setState({ loading: false, error: null, c }); })
+      .catch(error => { if (live) setState({ loading: false, error, c: null }); });
+    return () => { live = false; };
+  }, [caseId]);
 
   // Open the first unfinished step once the case loads.
   const firstTodo = state.c ? ["assessment", "vitals", "transport"].find((k) => !state.c.steps[k]) : null;
-  useEffect(() => { if (firstTodo) setOpen((o) => (Object.keys(o).length ? o : { [firstTodo]: true })); }, [firstTodo]);
+  const effectiveOpen = Object.keys(open).length ? open : firstTodo ? { [firstTodo]: true } : {};
 
   // Left rail and right column read the case from here (see CaseNav).
   const jump = useCallback((key) => {
@@ -210,7 +214,7 @@ export default function ParamedicCase() {
   const t = c.transport;
   const ts = t?.transport_status;
   const next = ts && ["DISPATCHED", "EN_ROUTE"].includes(ts) ? NEXT[ts] : null;
-  const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+  const toggle = (k) => setOpen((o) => { const current=Object.keys(o).length?o:effectiveOpen; return {...current,[k]:!current[k]}; });
   const T = (k) => msg[k] || {};
 
   return (
@@ -250,7 +254,7 @@ export default function ParamedicCase() {
 
       <div className="grid items-start gap-4 lg:grid-cols-[1.3fr_1fr]">
         <div className="flex flex-col gap-4">
-          <Section id="assessment" title="1. Assessment" done={c.steps.assessment} open={!!open.assessment} onToggle={() => toggle("assessment")}>
+          <Section id="assessment" title="1. Assessment" done={c.steps.assessment} open={!!effectiveOpen.assessment} onToggle={() => toggle("assessment")}>
             <form onSubmit={saveAssessment} noValidate className="flex flex-col gap-4">
               <Field id="a-complaint" label="Main complaint">
                 <input id="a-complaint" className="field" value={asm.chief_complaint} onChange={(e) => setAsm({ ...asm, chief_complaint: e.target.value })} />
@@ -296,7 +300,7 @@ export default function ParamedicCase() {
             </form>
           </Section>
 
-          <Section id="vitals" title="2. Vitals" done={c.steps.vitals} open={!!open.vitals} onToggle={() => toggle("vitals")}>
+          <Section id="vitals" title="2. Vitals" done={c.steps.vitals} open={!!effectiveOpen.vitals} onToggle={() => toggle("vitals")}>
             <VitalsHistory c={c} />
             <form onSubmit={saveVitals} noValidate className="flex flex-col gap-4">
               <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3">
@@ -325,7 +329,7 @@ export default function ParamedicCase() {
             </form>
           </Section>
 
-          <Section id="transport" title="3. Transport" done={c.steps.transport} open={!!open.transport} onToggle={() => toggle("transport")}>
+          <Section id="transport" title="3. Transport" done={c.steps.transport} open={!!effectiveOpen.transport} onToggle={() => toggle("transport")}>
             {t ? (
               <div className="flex flex-col gap-3">
                 <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -358,7 +362,7 @@ export default function ParamedicCase() {
             )}
           </Section>
 
-          <Section id="arrive" title="4. Arrival and handover" done={c.steps.handover} open={!!open.arrive} onToggle={() => toggle("arrive")}>
+          <Section id="arrive" title="4. Arrival and handover" done={c.steps.handover} open={!!effectiveOpen.arrive} onToggle={() => toggle("arrive")}>
             <div className="flex flex-col gap-4">
               <div className="rounded-2xl bg-soft px-4 py-3.5">
                 <div className="text-xs font-semibold text-muted">Give the ER desk this case code</div>

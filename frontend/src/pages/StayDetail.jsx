@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
-import { useRegisterVisitNav } from "../components/CaseNav";
+import { useRegisterVisitNav } from '../lib/caseNavHooks';
 import PatientDetails from "../components/PatientDetails";
 import { api } from "../api";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from '../auth/useAuth';
 import Icon from "../components/Icon";
 import RiskBadge from "../components/RiskBadge";
 import StatusChip from "../components/StatusChip";
@@ -75,7 +75,13 @@ export default function StayDetail() {
       .then(([summary, o]) => setState({ loading: false, error: null, summary, obs: o.observations || [] }))
       .catch((error) => setState({ loading: false, error, summary: null, obs: [] }));
   }, [stayId]);
-  useEffect(load, [load]);
+  useEffect(() => {
+    let live = true;
+    Promise.all([api.getStaySummary(stayId), api.getObservations(stayId)])
+      .then(([summary, o]) => { if (live) setState({ loading: false, error: null, summary, obs: o.observations || [] }); })
+      .catch(error => { if (live) setState({ loading: false, error, summary: null, obs: [] }); });
+    return () => { live = false; };
+  }, [stayId]);
   const visitNav = useMemo(() => (state.summary ? { stayId, summary: state.summary } : null), [stayId, state.summary]);
   useRegisterVisitNav(visitNav);
 

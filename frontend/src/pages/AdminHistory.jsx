@@ -1,7 +1,9 @@
 import {useCallback,useEffect,useMemo,useState} from 'react';
 import {Link} from 'react-router';
 import {adminApi} from '../api/admin';
-import {Action,Empty,PageHeader,Panel,Pill,ROLE_LABEL,when} from './AdminShared';
+import {Action,Empty,PageHeader,Panel,Pill} from './AdminShared';
+import {ROLE_LABEL,when} from '../lib/adminFormatting';
+
 const TABS=[
  {key:'archived_accounts',title:'Archived accounts',subtitle:'Logins removed; references retained'},
  {key:'closed_cases',title:'Closed cases',subtitle:'Completed cases retained in the database'},
@@ -18,7 +20,13 @@ function Entry({title,meta,children}){
 export default function AdminHistory(){
  const [data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[tab,setTab]=useState('archived_accounts'),[q,setQ]=useState('');
  const reload=useCallback(async()=>{setBusy(true);setError('');try{setData(await adminApi.history())}catch(e){setError(e.message)}finally{setBusy(false)}},[]);
- useEffect(()=>{reload()},[reload]);
+ useEffect(()=>{
+  let live=true;
+  adminApi.history().then(data=>{if(live)setData(data)})
+   .catch(e=>{if(live)setError(e.message)})
+   .finally(()=>{if(live)setBusy(false)});
+  return ()=>{live=false};
+ },[]);
  const rows=useMemo(()=>{const found=data?.[tab]||[];return found.filter(row=>Object.values(row).join(' ').toLowerCase().includes(q.toLowerCase().trim()))},[data,tab,q]);
  const count=key=>data?.[key]?.length??'—';
  return <div className="flex flex-col gap-5">

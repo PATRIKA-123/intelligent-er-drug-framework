@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from '../auth/useAuth';
 import { homeFor } from "../auth/roles";
 import { USE_MOCK } from "../api";
 import BrandPill from "../components/BrandPill";

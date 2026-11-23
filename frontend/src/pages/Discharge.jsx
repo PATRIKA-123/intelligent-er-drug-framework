@@ -34,7 +34,13 @@ export default function Discharge() {
       .then(([summary, post]) => setState({ loading: false, error: null, summary, post }))
       .catch((error) => setState({ loading: false, error, summary: null, post: null }));
   }
-  useEffect(load, [stayId]);
+  useEffect(() => {
+    let live = true;
+    Promise.all([api.getStaySummary(stayId), api.getPostEr(stayId)])
+      .then(([summary, post]) => { if (live) setState({ loading: false, error: null, summary, post }); })
+      .catch(error => { if (live) setState({ loading: false, error, summary: null, post: null }); });
+    return () => { live = false; };
+  }, [stayId]);
 
   if (state.loading && !state.post) return <Loading label="Loading visit" />;
   if (state.error) return <ErrorState error={state.error} onRetry={load} />;

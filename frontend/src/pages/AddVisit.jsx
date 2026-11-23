@@ -16,7 +16,9 @@ export default function AddVisit(){
   setBusy(true);
   try{const r=await api.claimVisit({stay_id:f.stay_id.trim(),access_code:f.access_code.trim(),phone_last4:f.phone_last4});
    if(r.status==='PENDING_VERIFICATION')throw new Error('The backend has not been updated to automatic claiming. Ask the administrator to deploy the new backend.');
-   setLinked(r.stay_id||f.stay_id.trim());setF({stay_id:'',access_code:'',phone_last4:''});
+   setLinked(r.stay_id||f.stay_id.trim());
+   window.dispatchEvent(new Event('parvah:patient-visit-linked'));
+   setF({stay_id:'',access_code:'',phone_last4:''});
   }catch(x){setErr(x.message);}finally{setBusy(false);}
  }
  return <div className="mx-auto flex w-full max-w-lg flex-col gap-5">
