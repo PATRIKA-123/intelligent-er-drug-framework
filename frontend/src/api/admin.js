@@ -5,6 +5,7 @@ export const adminApi = {
   users: async () => (await request('/admin/management/users')).users || [],
   operations: () => request('/admin/management/operations'),
   summary: () => request('/admin/management/summary'),
+  history: () => request('/admin/management/history'),
   verifiedPurgePreview: (kind, ids) => request('/admin/test-cleanup/preview',{method:'POST',body:{kind,ids}}),
   verifiedPurgeExecute: (kind, ids, reason, digest, verification) => request('/admin/test-cleanup/execute',{method:'POST',body:{kind,ids,reason,digest,verification}}),
   cleanupPreview: (kind, ids) => request('/admin/cleanup/preview',{method:'POST',body:{kind,ids}}),
