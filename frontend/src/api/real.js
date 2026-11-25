@@ -25,7 +25,12 @@ export const real = {
   createFollowUp: (stayId, body) => request(`/post-er/${stayId}/follow-ups`, { method: "POST", body }),
   getStaySummary: (stayId) => request(`/clinical-summary/${stayId}`),
   getObservations: (stayId) => request(`/stays/${stayId}/observations`),
+  recordStayObservation: (stayId, body) =>
+    request(`/stays/${stayId}/observations`, { method: "POST", body }),
   getNews2Results: (stayId) => request(`/stays/${stayId}/news2`),
+  getFhirBundle: (stayId) => request(`/stays/${stayId}/fhir`),
+  acknowledgeAlert: (alertId) =>
+    request(`/alerts/${alertId}/acknowledge`, { method: "PATCH", body: {} }),
   runDecisionSupport: (stayId) =>
     request(`/decision-support/${stayId}`, { method: "POST" }),
 

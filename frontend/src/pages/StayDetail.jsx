@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
-import { useRegisterVisitNav } from '../lib/caseNavHooks';
+import { useRegisterVisitNav } from "../lib/caseNavHooks";
 import PatientDetails from "../components/PatientDetails";
 import { api } from "../api";
-import { useAuth } from '../auth/useAuth';
+import { useAuth } from "../auth/useAuth";
 import Icon from "../components/Icon";
 import RiskBadge from "../components/RiskBadge";
 import StatusChip from "../components/StatusChip";
@@ -13,6 +13,7 @@ import AlertBanner from "../components/AlertBanner";
 import SafetyCard from "../components/SafetyCard";
 import ProvenanceTag from "../components/ProvenanceTag";
 import Button from "../components/Button";
+import Field from "../components/Field";
 import { ErrorState, Loading } from "../components/States";
 import { formatTime } from "../lib/format";
 import FollowUps from "../components/FollowUps";
@@ -68,6 +69,13 @@ export default function StayDetail() {
   const [state, setState] = useState({ loading: true, error: null, summary: null, obs: [] });
   const [running, setRunning] = useState(false);
   const [runMsg, setRunMsg] = useState("");
+  const [showVitalForm, setShowVitalForm] = useState(false);
+  const [vitalBusy, setVitalBusy] = useState(false);
+  const [vitalErr, setVitalErr] = useState("");
+  const [vitalForm, setVitalForm] = useState({
+    heart_rate: "", respiratory_rate: "", systolic_bp: "", diastolic_bp: "",
+    spo2: "", temperature_celsius: "", consciousness: "ALERT", oxygen_support: "no",
+  });
 
   const load = useCallback(() => {
     setState((s) => ({ ...s, loading: true, error: null }));
@@ -75,13 +83,47 @@ export default function StayDetail() {
       .then(([summary, o]) => setState({ loading: false, error: null, summary, obs: o.observations || [] }))
       .catch((error) => setState({ loading: false, error, summary: null, obs: [] }));
   }, [stayId]);
+
   useEffect(() => {
     let live = true;
     Promise.all([api.getStaySummary(stayId), api.getObservations(stayId)])
-      .then(([summary, o]) => { if (live) setState({ loading: false, error: null, summary, obs: o.observations || [] }); })
-      .catch(error => { if (live) setState({ loading: false, error, summary: null, obs: [] }); });
+      .then(async ([summary, o]) => {
+        if (!live) return;
+        setState({ loading: false, error: null, summary, obs: o.observations || [] });
+        if (
+          summary &&
+          !summary.decision_support?.computed_by_current_engine &&
+          ["DOCTOR", "ER_STAFF", "ADMIN"].includes(user.role)
+        ) {
+          try {
+            await api.runDecisionSupport(stayId);
+            const [freshSummary, freshObs] = await Promise.all([
+              api.getStaySummary(stayId),
+              api.getObservations(stayId),
+            ]);
+            if (live) setState({ loading: false, error: null, summary: freshSummary, obs: freshObs.observations || [] });
+          } catch (_) {}
+        }
+      })
+      .catch((error) => {
+        if (live) setState({ loading: false, error, summary: null, obs: [] });
+      });
     return () => { live = false; };
+  }, [stayId, user.role]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        Promise.all([api.getStaySummary(stayId), api.getObservations(stayId)])
+          .then(([summary, o]) => {
+            setState((prev) => ({ ...prev, summary, obs: o.observations || [] }));
+          })
+          .catch(() => {});
+      }
+    }, 8000);
+    return () => clearInterval(timer);
   }, [stayId]);
+
   const visitNav = useMemo(() => (state.summary ? { stayId, summary: state.summary } : null), [stayId, state.summary]);
   useRegisterVisitNav(visitNav);
 
@@ -100,18 +142,72 @@ export default function StayDetail() {
     }
   }
 
+  async function submitBedsideVitals(e) {
+    e.preventDefault();
+    setVitalErr("");
+    setVitalBusy(true);
+    try {
+      const payload = {
+        heart_rate: Number(vitalForm.heart_rate),
+        respiratory_rate: Number(vitalForm.respiratory_rate),
+        systolic_bp: Number(vitalForm.systolic_bp),
+        ...(vitalForm.diastolic_bp ? { diastolic_bp: Number(vitalForm.diastolic_bp) } : {}),
+        spo2: Number(vitalForm.spo2),
+        temperature_celsius: Number(vitalForm.temperature_celsius),
+        consciousness: vitalForm.consciousness,
+        oxygen_support: vitalForm.oxygen_support === "yes",
+        spo2_scale: 1,
+      };
+      const res = await api.recordStayObservation(stayId, payload);
+      await api.runDecisionSupport(stayId).catch(() => {});
+      invalidateStays();
+      setShowVitalForm(false);
+      setVitalForm({
+        heart_rate: "", respiratory_rate: "", systolic_bp: "", diastolic_bp: "",
+        spo2: "", temperature_celsius: "", consciousness: "ALERT", oxygen_support: "no",
+      });
+      setRunMsg(
+        res.trend?.trend_classification
+          ? `Vitals saved. Trend: ${res.trend.trend_classification.replace(/_/g, " ")}.`
+          : "Vitals saved."
+      );
+      load();
+    } catch (err) {
+      setVitalErr(err.message);
+    } finally {
+      setVitalBusy(false);
+    }
+  }
+
+  async function exportFhir() {
+    try {
+      const bundle = await api.getFhirBundle(stayId);
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/fhir+json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `stay-${stayId}-fhir-v4.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setRunMsg(err.message);
+    }
+  }
+
   if (state.loading && !state.summary) return <Loading label="Loading visit" />;
   if (state.error) return <ErrorState error={state.error} onRetry={load} />;
 
   const s = state.summary;
   const o = s.latest_observation;
   const n = s.latest_news2;
+  const decision = s.decision_support?.result;
   const alerts = s.clinical_alerts?.alerts || [];
   const findings = s.drug_safety?.findings || [];
   const staleSafety = s.drug_safety && s.drug_safety.computed_by_current_engine === false;
   const assumed = o?.assumed_fields || [];
   const isDoctor = user.role === "DOCTOR";
   const isStaff = user.role === "ER_STAFF" || user.role === "ADMIN";
+  const canEditClinical = isDoctor || isStaff;
   const back = isDoctor ? "/stays" : "/board";
 
   return (
@@ -120,18 +216,35 @@ export default function StayDetail() {
         <Link to={back} className="inline-flex min-h-11 items-center gap-1.5 self-start text-sm font-semibold">
           <Icon name="back" size={16} strokeWidth={2.4} /> Back
         </Link>
-        <div className="flex flex-wrap items-center gap-4">
-          <h1 className="m-0 text-[40px] font-semibold leading-none tracking-tight md:text-5xl">
-            {s.stay?.case_code || `Visit ${s.stay?.stay_id}`}
-          </h1>
-          <RiskBadge size="lg" riskText={n?.risk_level} score={n?.total_news2_score} />
-          {s.stay?.case_status && <StatusChip status={s.stay.case_status} />}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <h1 className="m-0 text-[40px] font-semibold leading-none tracking-tight md:text-5xl">
+              {s.stay?.case_code || `Visit ${s.stay?.stay_id}`}
+            </h1>
+            <RiskBadge size="lg" riskText={n?.risk_level} score={n?.total_news2_score} />
+            {s.stay?.case_status && <StatusChip status={s.stay.case_status} />}
+          </div>
+          <Button variant="outline" onClick={exportFhir} className="h-11! px-4! text-xs!">
+            Export HL7 FHIR v4
+          </Button>
         </div>
         <p className="m-0 text-sm text-muted">
           Visit {s.stay?.stay_id} · Patient {s.patient?.subject_id ?? s.stay?.subject_id}
           {s.stay?.chiefcomplaint ? ` · ${s.stay.chiefcomplaint}` : ""}
         </p>
       </div>
+
+      {decision?.decision_summary && (
+        <section aria-label="Clinical decision summary" className="rounded-panel bg-surface p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="m-0 text-[22px] font-semibold tracking-tight">Clinical decision summary</h2>
+            <span className="rounded-full bg-lavender px-3 py-1 text-xs font-bold uppercase tracking-wide">
+              Priority: {decision.decision_priority}
+            </span>
+          </div>
+          <p className="mb-0 mt-3 text-sm leading-relaxed text-ink">{decision.decision_summary}</p>
+        </section>
+      )}
 
       {(alerts.length > 0 || findings.length > 0 || staleSafety) && (
         <div id="visit-safety" className="grid scroll-mt-6 gap-4 md:grid-cols-2">
@@ -161,10 +274,79 @@ export default function StayDetail() {
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <div className="flex flex-col gap-4">
           <section id="visit-vitals" className="panel scroll-mt-6">
-            <div className="flex flex-wrap items-baseline justify-between gap-3">
-              <h2 className="m-0 text-[22px] font-semibold tracking-tight">Latest vitals</h2>
-              <span className="text-[13px] text-muted">{formatTime(o?.observation_time)}</span>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="m-0 text-[22px] font-semibold tracking-tight">Latest vitals</h2>
+                <span className="text-[13px] text-muted">{formatTime(o?.observation_time)}</span>
+              </div>
+              {canEditClinical && (
+                <Button
+                  variant={showVitalForm ? "outline" : "primary"}
+                  onClick={() => setShowVitalForm((v) => !v)}
+                  className="h-11! px-4! text-xs!"
+                >
+                  {showVitalForm ? "Cancel" : "Record vitals"}
+                </Button>
+              )}
             </div>
+
+            {showVitalForm && (
+              <form onSubmit={submitBedsideVitals} className="mt-4 flex flex-col gap-3.5 rounded-2xl bg-soft p-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {[
+                    ["heart_rate", "Heart rate (bpm)"],
+                    ["respiratory_rate", "Resp. rate (/min)"],
+                    ["systolic_bp", "Systolic BP"],
+                    ["diastolic_bp", "Diastolic BP"],
+                    ["spo2", "SpO2 (%)"],
+                    ["temperature_celsius", "Temperature (°C)"],
+                  ].map(([k, lbl]) => (
+                    <Field key={k} id={`er-v-${k}`} label={lbl}>
+                      <input
+                        id={`er-v-${k}`}
+                        required={k !== "diastolic_bp"}
+                        inputMode="decimal"
+                        className="field"
+                        value={vitalForm[k]}
+                        onChange={(e) => setVitalForm({ ...vitalForm, [k]: e.target.value })}
+                      />
+                    </Field>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field id="er-v-cons" label="Consciousness">
+                    <select
+                      id="er-v-cons"
+                      className="field"
+                      value={vitalForm.consciousness}
+                      onChange={(e) => setVitalForm({ ...vitalForm, consciousness: e.target.value })}
+                    >
+                      <option value="ALERT">Alert</option>
+                      <option value="NEW_CONFUSION">New confusion</option>
+                      <option value="V">Responds to voice</option>
+                      <option value="P">Responds to pain</option>
+                      <option value="U">Unresponsive</option>
+                    </select>
+                  </Field>
+                  <Field id="er-v-o2" label="On oxygen?">
+                    <select
+                      id="er-v-o2"
+                      className="field"
+                      value={vitalForm.oxygen_support}
+                      onChange={(e) => setVitalForm({ ...vitalForm, oxygen_support: e.target.value })}
+                    >
+                      <option value="no">No, breathing air</option>
+                      <option value="yes">Yes, on oxygen</option>
+                    </select>
+                  </Field>
+                </div>
+                {vitalErr && <p role="alert" className="m-0 text-sm font-medium text-risk-high-bg">{vitalErr}</p>}
+                <Button type="submit" disabled={vitalBusy}>
+                  {vitalBusy ? "Saving..." : "Save vitals and update score"}
+                </Button>
+              </form>
+            )}
+
             {o ? (
               <>
                 <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -262,12 +444,16 @@ export default function StayDetail() {
                 <Button variant="outline" to={`/stays/${stayId}/discharge`}>Discharge</Button>
               </>
             )}
-            {isStaff && (
+            {canEditClinical && (
               <>
-                <Button onClick={runDecisionSupport} disabled={running}>
+                <Button variant={isDoctor ? "outline" : "primary"} onClick={runDecisionSupport} disabled={running}>
                   {running ? "Running..." : "Run decision support"}
                 </Button>
-                <Button variant="outline" onClick={() => document.getElementById("follow-ups")?.scrollIntoView({ behavior: "smooth", block: "start" })}>Plan a follow-up</Button>
+                {isStaff && (
+                  <Button variant="outline" onClick={() => document.getElementById("follow-ups")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+                    Plan a follow-up
+                  </Button>
+                )}
               </>
             )}
             {runMsg && <p role="status" className="m-0 text-sm text-muted">{runMsg}</p>}

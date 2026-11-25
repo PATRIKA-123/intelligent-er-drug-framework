@@ -6,14 +6,13 @@ const { isValidStayId } = require("../validators/idValidator");
 const { parseStayQuery } = require("../validators/stayQuery");
 const { assumedInputsSql } = require("../services/inputProvenance");
 const { requireStayAccess, stayListFilter } = require("../services/accessPolicy");
+const { buildFhirBundle } = require("../services/fhirMapper");
 
 async function stayExists(stay_id) {
   const result = await pool.query(`SELECT 1 FROM ed_stays WHERE stay_id = $1`, [stay_id]);
   return result.rows.length > 0;
 }
 
-// B19/B20: stable, bounded, scoped paging. Existing limit/offset/count/stays
-// fields are kept for frontend compatibility; total/has_more are additive.
 router.get("/", authMiddleware, async (req, res) => {
   const page = parseStayQuery(req.query);
   if (page.error) return res.status(400).json({ error: page.error, code: page.code });
@@ -22,13 +21,11 @@ router.get("/", authMiddleware, async (req, res) => {
     const filters = [clause];
     const filtersParams = [...params];
     if (page.search !== null) {
-      // Bound parameter; escape SQL LIKE special characters so user text is literal.
-      filtersParams.push(`%${page.search.replace(/[\\%_]/g, "\\$&")}%`);
+      filtersParams.push(`%${page.search.replace(/[\%_]/g, "\\$&")}%`);
       filters.push(`(s.chiefcomplaint ILIKE $${filtersParams.length} ESCAPE '\\' OR s.stay_id::text = $${filtersParams.length + 1})`);
       filtersParams.push(page.search);
     }
     const where = filters.map((f) => `(${f})`).join(" AND ");
-    // Both SELECTs run under the caller's access policy (no global count leak).
     const countResult = await pool.query(
       `SELECT COUNT(*)::int AS total FROM ed_stays s WHERE ${where}`,
       filtersParams
@@ -83,13 +80,74 @@ router.get("/:stay_id/observations", authMiddleware, requireStayAccess(), async 
               c.heart_rate, c.respiratory_rate, c.spo2, c.systolic_bp,
               c.consciousness, c.oxygen_support, c.spo2_scale,
               ${prov.columns}
-       FROM observations_clean c JOIN observations o ON o.observation_id = c.observation_id
-       WHERE c.stay_id = $1 ORDER BY c.observation_time`, [stay_id]
+       FROM observations_clean c
+       LEFT JOIN observations o ON o.observation_id = c.observation_id
+       WHERE c.stay_id = $1
+       UNION ALL
+       SELECT (100000000 + e.entry_id) AS observation_id,
+              e.observation_time,
+              e.temperature_celsius AS temperature,
+              e.temperature_celsius,
+              e.heart_rate,
+              e.respiratory_rate,
+              e.spo2,
+              e.systolic_bp,
+              e.consciousness,
+              e.oxygen_support,
+              e.spo2_scale,
+              FALSE AS consciousness_assumed,
+              FALSE AS oxygen_support_assumed,
+              FALSE AS spo2_scale_assumed
+       FROM public.er_vital_entries e
+       WHERE e.stay_id = $1
+         AND NOT EXISTS (
+           SELECT 1 FROM observations_clean c2
+           WHERE c2.stay_id = e.stay_id AND c2.observation_time = e.observation_time
+         )
+       ORDER BY observation_time ASC`,
+      [stay_id]
     );
     return res.json({ stay_id, count: result.rowCount, observations: result.rows });
   } catch (err) {
     console.error("Error fetching observations:", err.message);
     return res.status(500).json({ error: "Failed to fetch observations" });
+  }
+});
+
+router.get("/:stay_id/fhir", authMiddleware, requireStayAccess(), async (req, res) => {
+  try {
+    const { stay_id } = req.params;
+    if (!isValidStayId(stay_id)) return res.status(400).json({ error: "stay_id must be a valid integer" });
+
+    const stayRes = await pool.query(
+      `SELECT s.*, p.patient_id, p.gender AS patient_gender
+       FROM ed_stays s
+       LEFT JOIN patients p ON p.subject_id = s.subject_id
+       WHERE s.stay_id = $1`,
+      [stay_id]
+    );
+    if (!stayRes.rows.length) return res.status(404).json({ error: "ED stay not found" });
+
+    const obsRes = await pool.query(
+      `SELECT observation_id, observation_time, heart_rate, respiratory_rate,
+              systolic_bp, diastolic_bp, spo2, temperature_celsius
+       FROM observations_clean
+       WHERE stay_id = $1
+       UNION ALL
+       SELECT (100000000 + entry_id) AS observation_id, observation_time, heart_rate,
+              respiratory_rate, systolic_bp, diastolic_bp, spo2, temperature_celsius
+       FROM public.er_vital_entries
+       WHERE stay_id = $1
+       ORDER BY observation_time ASC`,
+      [stay_id]
+    );
+
+    const bundle = buildFhirBundle(stayRes.rows[0], stayRes.rows[0], obsRes.rows);
+    res.setHeader("Content-Type", "application/fhir+json");
+    return res.json(bundle);
+  } catch (err) {
+    console.error("Error exporting FHIR bundle:", err.message);
+    return res.status(500).json({ error: "Failed to build HL7 FHIR v4 bundle" });
   }
 });
 
@@ -99,7 +157,6 @@ router.get("/:stay_id/news2", authMiddleware, requireStayAccess(), async (req, r
     if (!isValidStayId(stay_id)) return res.status(400).json({ error: "stay_id must be a valid integer" });
     if (!(await stayExists(stay_id))) return res.status(404).json({ error: "ED stay not found" });
     const prov = await assumedInputsSql("o");
-    // B10_DURABLE_NEWS2_PROVENANCE: use stored snapshot where migrated.
     const { hasColumn } = require("../services/schemaCapabilities");
     const hasSnapshot = await hasColumn("news2_input_provenance", "observation_id");
     const individualFlags = hasSnapshot

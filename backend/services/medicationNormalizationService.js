@@ -2,9 +2,137 @@
 
 const pool = require("../db");
 
-// Frozen mapping tables have no published source-version columns. Until B04's
-// schema migration adds those fields, the provenance below identifies the
-// source table and mapping row ID; it does not claim a version that does not exist.
+const BRAND_AND_ALIAS_TO_GENERIC = {
+  ecosprin: ["aspirin"],
+  disprin: ["aspirin"],
+  loprin: ["aspirin"],
+  clopilet: ["clopidogrel"],
+  plavix: ["clopidogrel"],
+  augmentin: ["amoxicillin", "clavulanate"],
+  moxikind: ["amoxicillin", "clavulanate"],
+  pan: ["pantoprazole"],
+  pantocid: ["pantoprazole"],
+  rantac: ["ranitidine"],
+  omez: ["omeprazole"],
+  crocin: ["acetaminophen"],
+  dolo: ["acetaminophen"],
+  calpol: ["acetaminophen"],
+  paracetamol: ["acetaminophen"],
+  brufen: ["ibuprofen"],
+  combiflam: ["ibuprofen", "acetaminophen"],
+  voveran: ["diclofenac"],
+  lasix: ["furosemide"],
+  dytor: ["torsemide"],
+  metolar: ["metoprolol"],
+  betaloc: ["metoprolol"],
+  lopressor: ["metoprolol"],
+  aten: ["atenolol"],
+  amlopres: ["amlodipine"],
+  stamlo: ["amlodipine"],
+  telma: ["telmisartan"],
+  cardace: ["ramipril"],
+  coumadin: ["warfarin"],
+  warf: ["warfarin"],
+  clexane: ["enoxaparin"],
+  atorva: ["atorvastatin"],
+  lipitor: ["atorvastatin"],
+  rosuvas: ["rosuvastatin"],
+  glycomet: ["metformin"],
+  azithral: ["azithromycin"],
+  ciplox: ["ciprofloxacin"],
+  taxim: ["cefotaxime"],
+  monocef: ["ceftriaxone"],
+  zofer: ["ondansetron"],
+  emeset: ["ondansetron"],
+};
+
+function normalizeRawDrugTokens(rawName) {
+  const cleaned = String(rawName || "")
+    .toLowerCase()
+    .replace(/\b(tab|tablet|tablets|cap|capsule|capsules|inj|injection|syp|syrup|iv|im|po|od|bd|tds|qid|sos|stat|mg|mcg|g|ml|%)\b/g, " ")
+    .replace(/\b\d+(\.\d+)?\b/g, " ")
+    .replace(/[^a-z+\s/-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) return [];
+  return cleaned
+    .split(/\s*(?:\+|\/|\band\b|,)\s*/i)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 3);
+}
+
+function resolveCandidateGenerics(rawName) {
+  const tokens = normalizeRawDrugTokens(rawName);
+  const candidates = new Set();
+
+  for (const token of tokens) {
+    if (BRAND_AND_ALIAS_TO_GENERIC[token]) {
+      for (const g of BRAND_AND_ALIAS_TO_GENERIC[token]) candidates.add(g);
+    } else {
+      const firstWord = token.split(" ")[0];
+      if (BRAND_AND_ALIAS_TO_GENERIC[firstWord]) {
+        for (const g of BRAND_AND_ALIAS_TO_GENERIC[firstWord]) candidates.add(g);
+      } else {
+        candidates.add(firstWord);
+      }
+    }
+  }
+  return [...candidates];
+}
+
+async function autoMapMedication(dbClient, medicationId, rawName) {
+  const client = dbClient || pool;
+  const candidates = resolveCandidateGenerics(rawName);
+  if (candidates.length === 0) return { mapped: false, identities: [] };
+
+  const verifiedGenerics = [];
+  for (const candidate of candidates) {
+    const res = await client.query(
+      `SELECT drug_name FROM (
+         SELECT DISTINCT LOWER(TRIM(drug_a)) AS drug_name
+         FROM drug_interactions
+         WHERE LOWER(TRIM(drug_a)) = $1
+         UNION
+         SELECT DISTINCT LOWER(TRIM(drug_b)) AS drug_name
+         FROM drug_interactions
+         WHERE LOWER(TRIM(drug_b)) = $1
+       ) matched
+       LIMIT 1`,
+      [candidate]
+    );
+    if (res.rows.length > 0) {
+      verifiedGenerics.push(res.rows[0].drug_name);
+    }
+  }
+
+  const uniqueVerified = [...new Set(verifiedGenerics)];
+  if (uniqueVerified.length === 0) {
+    return { mapped: false, identities: [] };
+  }
+
+  if (uniqueVerified.length === 1) {
+    await client.query(
+      `INSERT INTO canonical_medication_map (medication_id, canonical_name, mapping_status)
+       VALUES ($1, $2, 'MAPPED')
+       ON CONFLICT DO NOTHING`,
+      [medicationId, uniqueVerified[0]]
+    );
+  } else {
+    for (const comp of uniqueVerified) {
+      await client.query(
+        `INSERT INTO medication_components
+           (medication_id, component_name, component_canonical_name, mapping_status)
+         VALUES ($1, $2, $2, 'MAPPED')
+         ON CONFLICT DO NOTHING`,
+        [medicationId, comp]
+      );
+    }
+  }
+
+  return { mapped: true, identities: uniqueVerified };
+}
+
 function mappingError(kind, medicationId) {
   const error = new Error(`Medication ${medicationId} has ${kind}; medication safety screening is incomplete`);
   error.code = "AMBIGUOUS_MEDICATION_MAPPING";
@@ -26,16 +154,6 @@ function groupByMedication(rows) {
   return groups;
 }
 
-/**
- * Read-only normalization of a stay's medication snapshot.
- * Duplicate canonical map rows are acceptable ONLY when their canonical
- * identity and mapping status agree; conflicting duplicates fail closed.
- * Combination ingredients may have multiple rows, but inconsistent mappings
- * for the same ingredient are rejected. This never silently chooses a row.
- *
- * options.requireComplete=true is for clinical screening. Missing / pending
- * mapping data is then a 422, not a falsely clean interaction screen.
- */
 async function getNormalizedMedications(stayId, options = {}) {
   const medResult = await pool.query(
     `SELECT medication_id, medication_name, normalized_name, charttime
@@ -50,7 +168,6 @@ async function getNormalizedMedications(stayId, options = {}) {
   if (!medications.length) return empty;
 
   const ids = medications.map(m => m.medication_id);
-  // Do NOT use DISTINCT ON: it hides contradictory mapping rows.
   const canonical = await pool.query(
     `SELECT mapping_id, medication_id, canonical_name, mapping_status, mapping_version, created_at
      FROM canonical_medication_map
@@ -69,7 +186,6 @@ async function getNormalizedMedications(stayId, options = {}) {
       canonical_name: source.canonical, source: source.type, component_of: componentOf });
     identities.add(source.canonical);
     sources.push({ medication_id: med.medication_id, table: source.table, row_id: rowId,
-      // B14_VERSIONED_PROVENANCE: NULL explicitly means legacy/unversioned.
       mapping_version: mappingRow.mapping_version ?? null,
       version_status: mappingRow.mapping_version ? 'VERSIONED' : 'LEGACY_UNVERSIONED',
       mapping_created_at: mappingRow.created_at ?? null });
@@ -99,7 +215,6 @@ async function getNormalizedMedications(stayId, options = {}) {
       const byIngredient = new Map();
       for (const row of parts) {
         const ingredient = normalized(row.component_name);
-        // Unknown ingredient identity cannot be safely de-duplicated.
         if (!ingredient) throw mappingError("an unnamed component", id);
         const key = ingredient;
         if (!byIngredient.has(key)) byIngredient.set(key, []);
@@ -144,4 +259,8 @@ async function getNormalizedMedications(stayId, options = {}) {
   return result;
 }
 
-module.exports = { getNormalizedMedications };
+module.exports = {
+  getNormalizedMedications,
+  autoMapMedication,
+  resolveCandidateGenerics,
+};

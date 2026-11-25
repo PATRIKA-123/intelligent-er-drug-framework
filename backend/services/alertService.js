@@ -1,37 +1,23 @@
 const { randomUUID } = require("crypto");
 const pool = require("../db");
 const screeningLedger = require("./screeningRunLedger");
-const {
-  computeAndPersistDecisionSupport, 
-} = require("./decisionSupportService");
+const { computeAndPersistDecisionSupport } = require("./decisionSupportService");
 const { getClinicalContext } = require("./clinicalContextService");
 
-// Keep these severity definitions aligned with the existing project rules.
+const HYSTERESIS_WINDOW_MINUTES = 15;
+const SEVERITY_RANK = { LOW: 0, REVIEW: 1, MEDIUM: 2, HIGH: 3 };
+
 const DRUG_SEVERITY_INFO = {
-  Major: {
-    severity: "HIGH",
-    priority: "HIGH",
-  },
-  Moderate: {
-    severity: "MEDIUM",
-    priority: "MEDIUM",
-  },
-  Minor: {
-    severity: "LOW",
-    priority: "LOW",
-  },
-  Unknown: {
-    severity: "REVIEW",
-    priority: "REVIEW",
-  },
+  Major: { severity: "HIGH", priority: "HIGH" },
+  Moderate: { severity: "MEDIUM", priority: "MEDIUM" },
+  Minor: { severity: "LOW", priority: "LOW" },
+  Unknown: { severity: "REVIEW", priority: "REVIEW" },
 };
 
 function buildDrugAlertRows(patientId, stayId, drugSafetyRows) {
   return drugSafetyRows.map((row) => {
     const level = row.interaction_level || "Unknown";
-    const severityInfo =
-      DRUG_SEVERITY_INFO[level] || DRUG_SEVERITY_INFO.Unknown;
-
+    const severityInfo = DRUG_SEVERITY_INFO[level] || DRUG_SEVERITY_INFO.Unknown;
     return {
       patient_id: patientId,
       stay_id: stayId,
@@ -44,33 +30,17 @@ function buildDrugAlertRows(patientId, stayId, drugSafetyRows) {
       priority: severityInfo.priority,
       alert_title: `${level} drug interaction`,
       alert_message:
-        `Project-generated drug interaction finding: ` +
-        `${row.component_a || "Unknown medication"} and ` +
-        `${row.component_b || "Unknown medication"}. ` +
-        `Interaction level: ${level}. Review by a qualified clinician is required.`,
+        `Drug interaction detected: ${row.component_a || "Unknown medication"} + ` +
+        `${row.component_b || "Unknown medication"} (${level}). Clinician review required.`,
     };
   });
 }
 
-
 function buildPhysiologicalAlertRows(patientId, stayId, decision) {
   const rows = [];
+  const knownNews2Categories = ["High Risk", "Medium Risk", "Low-Medium Risk", "Low Risk"];
+  const knownTrendClassifications = ["STABLE", "IMPROVING", "DETERIORATING", "RAPIDLY_DETERIORATING"];
 
-  const knownNews2Categories = [
-    "High Risk",
-    "Medium Risk",
-    "Low-Medium Risk",
-    "Low Risk",
-  ];
-
-  const knownTrendClassifications = [
-    "STABLE",
-    "IMPROVING",
-    "DETERIORATING",
-    "RAPIDLY_DETERIORATING",
-  ];
-
-  // NEWS2 high-risk alert
   if (decision.news2_category === "High Risk") {
     rows.push({
       patient_id: patientId,
@@ -83,13 +53,9 @@ function buildPhysiologicalAlertRows(patientId, stayId, decision) {
       severity: "HIGH",
       priority: "HIGH",
       alert_title: "High NEWS2 risk",
-      alert_message:
-        "The stored NEWS2 classification is High Risk. " +
-        "This is a project-generated finding and requires clinical review.",
+      alert_message: `NEWS2 score ${decision.news2_score ?? "7+"} indicates High physiological risk. Immediate clinical review required.`,
     });
-  } else if (
-    !knownNews2Categories.includes(decision.news2_category)
-  ) {
+  } else if (!knownNews2Categories.includes(decision.news2_category)) {
     rows.push({
       patient_id: patientId,
       stay_id: stayId,
@@ -100,14 +66,11 @@ function buildPhysiologicalAlertRows(patientId, stayId, decision) {
       safety_result_id: null,
       severity: "REVIEW",
       priority: "REVIEW",
-      alert_title: "NEWS2 data requires review",
-      alert_message:
-        "The NEWS2 category is missing or unrecognized. " +
-        "Clinical review is required before relying on the physiological risk assessment.",
+      alert_title: "NEWS2 baseline incomplete",
+      alert_message: "Complete all 6 vital parameters + oxygen support to generate a verified NEWS2 score.",
     });
   }
 
-  // Vital trend alerts
   if (decision.trend_classification === "RAPIDLY_DETERIORATING") {
     rows.push({
       patient_id: patientId,
@@ -119,10 +82,8 @@ function buildPhysiologicalAlertRows(patientId, stayId, decision) {
       safety_result_id: null,
       severity: "HIGH",
       priority: "HIGH",
-      alert_title: "Rapidly deteriorating vital trend",
-      alert_message:
-        "The stored vital-trend classification is RAPIDLY_DETERIORATING. " +
-        "This is a project-generated finding and requires clinical review.",
+      alert_title: "Rapidly deteriorating vital trajectory",
+      alert_message: "Rapid physiological decline detected across consecutive vital readings. Escalate bedside evaluation.",
     });
   } else if (decision.trend_classification === "DETERIORATING") {
     rows.push({
@@ -135,14 +96,10 @@ function buildPhysiologicalAlertRows(patientId, stayId, decision) {
       safety_result_id: null,
       severity: "REVIEW",
       priority: "REVIEW",
-      alert_title: "Deteriorating vital trend - Clinical Review Required",
-      alert_message:
-        "The stored vital-trend classification is DETERIORATING. " +
-        "Clinical review is required. This classification does not independently increase the overall risk tier.",
+      alert_title: "Deteriorating vital trend",
+      alert_message: "Worsening vital deltas observed since last reading. Reassess patient trajectory.",
     });
-  } else if (
-    !knownTrendClassifications.includes(decision.trend_classification)
-  ) {
+  } else if (!knownTrendClassifications.includes(decision.trend_classification)) {
     rows.push({
       patient_id: patientId,
       stay_id: stayId,
@@ -153,35 +110,50 @@ function buildPhysiologicalAlertRows(patientId, stayId, decision) {
       safety_result_id: null,
       severity: "REVIEW",
       priority: "REVIEW",
-      alert_title: "Vital trend data requires review",
-      alert_message:
-        "The vital-trend classification is missing, insufficient, or unrecognized. " +
-        "Clinical review is required before relying on the trend assessment.",
+      alert_title: "Awaiting second vital reading for trend",
+      alert_message: "Baseline vitals recorded. Record a subsequent vital check to compute rate-of-change trajectory.",
     });
   }
 
   return rows;
 }
 
+async function filterWithHysteresis(client, stayId, candidateRows) {
+  if (!candidateRows.length) return [];
+  const recentRes = await client.query(
+    `SELECT alert_type, alert_title, severity
+     FROM clinical_alerts
+     WHERE stay_id = $1
+       AND status = 'ACTIVE'
+       AND created_at >= NOW() - ($2 || ' minutes')::interval`,
+    [stayId, String(HYSTERESIS_WINDOW_MINUTES)]
+  );
+  if (!recentRes.rows.length) return candidateRows;
+
+  return candidateRows.filter((cand) => {
+    const matchingRecent = recentRes.rows.filter(
+      (r) => r.alert_type === cand.alert_type && r.alert_title === cand.alert_title
+    );
+    if (!matchingRecent.length) return true;
+    const maxRecentRank = Math.max(...matchingRecent.map((r) => SEVERITY_RANK[r.severity] ?? 0));
+    const candRank = SEVERITY_RANK[cand.severity] ?? 0;
+    return candRank > maxRecentRank;
+  });
+}
 
 async function generateAndPersistAlerts(stayId) {
   const engineRunId = randomUUID();
-const engineVersion = "phase6-v1";
-  // Read-only precheck: don't delete existing alerts for an invalid stay.
+  const engineVersion = "phase6-v1";
   const initialContext = await getClinicalContext(stayId);
+  if (!initialContext) return null;
 
-  if (!initialContext) {
-    return null;
-  }
-
-    // B13: durable RUNNING row is committed independently of clinical transaction.
   await screeningLedger.beginRun(stayId, engineRunId, engineVersion);
   let runRecorded = true;
   let client;
-  try { client = await pool.connect(); }
-  catch (err) {
-    try { await screeningLedger.failRun(engineRunId, err); }
-    catch (ledgerErr) { console.error("B13 run ledger failure:", ledgerErr.message); }
+  try {
+    client = await pool.connect();
+  } catch (err) {
+    try { await screeningLedger.failRun(engineRunId, err); } catch (_) {}
     throw err;
   }
   let transactionStarted = false;
@@ -190,129 +162,60 @@ const engineVersion = "phase6-v1";
     await client.query("BEGIN");
     transactionStarted = true;
 
-    // Only one processing run per stay at a time. The lock is released
-    // automatically at COMMIT or ROLLBACK. If another run holds it, refuse
-    // with 409 instead of waiting, so repeated requests cannot pile up.
     const lock = await client.query(
       `SELECT pg_try_advisory_xact_lock(hashtextextended($1::text, 0)) AS locked`,
       [`decision_support:${stayId}`]
     );
     if (!lock.rows[0].locked) {
-      const busy = new Error(
-        "Decision-support processing is already in progress for this stay"
-      );
+      const busy = new Error("Decision-support processing is already in progress for this stay");
       busy.statusCode = 409;
       throw busy;
     }
 
-    // B22_APPEND_ONLY_ALERT: preserve alerts from previous runs.
     const preDeleteResult = { rowCount: 0 };
-
-    // Persist decision support and drug safety using the same transaction.
-   const decisionResult = await computeAndPersistDecisionSupport(stayId, {
-  client,
-  engineRunId,
-  engineVersion,
-});
-
-if (!decisionResult) {
-  throw new Error(
-    `Could not compute decision support for stay ${stayId}.`
-  );
-}
+    const decisionResult = await computeAndPersistDecisionSupport(stayId, {
+      client,
+      engineRunId,
+      engineVersion,
+    });
+    if (!decisionResult) throw new Error(`Could not compute decision support for stay ${stayId}.`);
 
     const patientId = decisionResult.decision.patient_id;
-
     const drugSafetyResult = await client.query(
-      `SELECT
-         medication_id_a,
-         medication_id_b,
-         component_a,
-         component_b,
-         safety_result_id,
-         interaction_level
+      `SELECT medication_id_a, medication_id_b, component_a, component_b,
+              safety_result_id, interaction_level
        FROM drug_safety_results
-       WHERE stay_id = $1 AND engine_run_id = $2`, [stayId, engineRunId]
+       WHERE stay_id = $1 AND engine_run_id = $2`,
+      [stayId, engineRunId]
     );
 
-    const alertRows = [
+    const rawAlertRows = [
       ...buildDrugAlertRows(patientId, stayId, drugSafetyResult.rows),
-      ...buildPhysiologicalAlertRows(
-        patientId,
-        stayId,
-        decisionResult.decision
-      ),
+      ...buildPhysiologicalAlertRows(patientId, stayId, decisionResult.decision),
     ];
 
+    const alertRows = await filterWithHysteresis(client, stayId, rawAlertRows);
     let insertedRows = [];
 
     if (alertRows.length > 0) {
       const insertResult = await client.query(
         `INSERT INTO clinical_alerts
-          (
-            patient_id,
-            stay_id,
-            alert_type,
-            alert_source,
-            medication_id_a,
-            medication_id_b,
-            safety_result_id,
-            severity,
-            priority,
-            alert_title,
-            alert_message,
-            status,
-            engine_run_id,
-             engine_version
-          )
-         SELECT
-            $1,
-            $2,
-            t.alert_type,
-            t.alert_source,
-            t.medication_id_a,
-            t.medication_id_b,
-            t.safety_result_id,
-            t.severity,
-            t.priority,
-            t.alert_title,
-            t.alert_message,
-            'ACTIVE',
-            $12,
-            $13
+          (patient_id, stay_id, alert_type, alert_source,
+           medication_id_a, medication_id_b, safety_result_id,
+           severity, priority, alert_title, alert_message,
+           status, engine_run_id, engine_version)
+         SELECT $1, $2, t.alert_type, t.alert_source,
+                t.medication_id_a, t.medication_id_b, t.safety_result_id,
+                t.severity, t.priority, t.alert_title, t.alert_message,
+                'ACTIVE', $12, $13
          FROM unnest(
-            $3::text[],
-            $4::text[],
-            $5::int[],
-            $6::int[],
-            $7::int[],
-            $8::text[],
-            $9::text[],
-            $10::text[],
-            $11::text[]
-         ) AS t(
-            alert_type,
-            alert_source,
-            medication_id_a,
-            medication_id_b,
-            safety_result_id,
-            severity,
-            priority,
-            alert_title,
-            alert_message
-         )
-         RETURNING
-            alert_id,
-            alert_type,
-            alert_source,
-            medication_id_a,
-            medication_id_b,
-            safety_result_id,
-            severity,
-            priority,
-            alert_title,
-            alert_message,
-            status`,
+            $3::text[], $4::text[], $5::int[], $6::int[], $7::int[],
+            $8::text[], $9::text[], $10::text[], $11::text[]
+         ) AS t(alert_type, alert_source, medication_id_a, medication_id_b,
+                safety_result_id, severity, priority, alert_title, alert_message)
+         RETURNING alert_id, alert_type, alert_source, medication_id_a,
+                   medication_id_b, safety_result_id, severity, priority,
+                   alert_title, alert_message, status`,
         [
           patientId,
           stayId,
@@ -329,44 +232,36 @@ if (!decisionResult) {
           engineVersion,
         ]
       );
-
       insertedRows = insertResult.rows;
     }
 
-        // B13_ATOMIC_COMPLETION: commit the success ledger update WITH clinical results.
-    // The separate RUNNING row remains available if the clinical transaction rolls back.
     const drugCount = Number(decisionResult.drug_safety?.inserted_count || 0);
-    await screeningLedger.finishRun(engineRunId,
+    await screeningLedger.finishRun(
+      engineRunId,
       drugCount + insertedRows.length > 0 ? "COMPLETE_FINDINGS" : "COMPLETE_ZERO_FINDINGS",
-      drugCount, insertedRows.length, client);
+      drugCount,
+      insertedRows.length,
+      client
+    );
     await client.query("COMMIT");
     transactionStarted = false;
     runRecorded = false;
 
-return {
-  stay_id: stayId,
-  decision: decisionResult.decision,
-  drug_safety: decisionResult.drug_safety,
-  deleted_count: preDeleteResult.rowCount,
-  inserted_count: insertedRows.length,
-  alerts: insertedRows,
-};
-
+    return {
+      stay_id: stayId,
+      decision: decisionResult.decision,
+      drug_safety: decisionResult.drug_safety,
+      deleted_count: preDeleteResult.rowCount,
+      inserted_count: insertedRows.length,
+      suppressed_count: rawAlertRows.length - alertRows.length,
+      alerts: insertedRows,
+    };
   } catch (err) {
     if (transactionStarted) {
-      try {
-        await client.query("ROLLBACK");
-      } catch (rollbackError) {
-        console.error(
-          "Transaction rollback failed:",
-          rollbackError.message
-        );
-      }
+      try { await client.query("ROLLBACK"); } catch (_) {}
     }
-
-        if (runRecorded) {
-      try { await screeningLedger.failRun(engineRunId, err); }
-      catch (ledgerErr) { console.error("B13 run ledger failure:", ledgerErr.message); }
+    if (runRecorded) {
+      try { await screeningLedger.failRun(engineRunId, err); } catch (_) {}
     }
     throw err;
   } finally {
