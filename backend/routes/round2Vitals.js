@@ -149,10 +149,13 @@ router.post("/:stay_id/observations", authMiddleware, CAN_RECORD, requireStayAcc
       [stayId]
     );
 
+    const news2 = news2Of(v, scale2Ok);
+    const scoringStatus = v.complete && news2.complete ? "COMPLETED" : "PENDING_INPUTS";
+
     const ins = await client.query(
       `INSERT INTO public.er_vital_entries
-        (stay_id,observation_time,heart_rate,respiratory_rate,systolic_bp,diastolic_bp,spo2,temperature_celsius,consciousness,oxygen_support,spo2_scale,recorded_by)
-       VALUES ($1,COALESCE($2::timestamptz,NOW()),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        (stay_id,observation_time,heart_rate,respiratory_rate,systolic_bp,diastolic_bp,spo2,temperature_celsius,consciousness,oxygen_support,spo2_scale,recorded_by,scoring_status,news2_score,risk_level)
+       VALUES ($1,COALESCE($2::timestamptz,NOW()),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [
         stayId,
         v.observation_time,
@@ -166,11 +169,13 @@ router.post("/:stay_id/observations", authMiddleware, CAN_RECORD, requireStayAcc
         v.oxygen_support,
         v.spo2_scale,
         req.user.user_id,
+        scoringStatus,
+        v.complete && news2.complete ? news2.total_news2_score : null,
+        v.complete && news2.complete ? news2.risk_level : null,
       ]
     );
 
     const savedEntry = ins.rows[0];
-    const news2 = news2Of(v, scale2Ok);
     let trend = null;
 
     if (v.complete && news2.complete) {
